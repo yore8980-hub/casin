@@ -53,5 +53,11 @@
     "privateKey": "174299fb4c3e005a1317acdeaddcd3aa1341c741e7a66aba55b8dc847a63bc82",
     "createdAt": "2025-09-07T14:33:41.767Z",
     "balance": 0
+  },
+  {
+    "address": "LRnb6oU7yQX3Lq9G8Y9oQsrhxiMBQsRFzX",
+    "privateKey": "13ae2d6e5e1736355387f64d32e80e99f5da08c4cf2edcbab3f78ef7e1726e2f",
+    "createdAt": "2025-09-07T14:49:56.627Z",
+    "balance": 0
   }
 ]
