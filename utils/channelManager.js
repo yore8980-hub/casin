@@ -14,7 +14,7 @@ class ChannelManager {
                 return JSON.parse(fs.readFileSync(CHANNEL_COUNTER_FILE, 'utf8'));
             }
         } catch (error) {
-            console.error('Erreur chargement données channels:', error);
+            console.error('Error loading channel data:', error);
         }
         
         return {
@@ -27,9 +27,9 @@ class ChannelManager {
     saveChannelData() {
         try {
             fs.writeFileSync(CHANNEL_COUNTER_FILE, JSON.stringify(this.channelData, null, 2));
-            console.log('✅ Données channels sauvegardées');
+            console.log('✅ Channel data saved');
         } catch (error) {
-            console.error('Erreur sauvegarde channels:', error);
+            console.error('Error saving channel data:', error);
         }
     }
 
@@ -57,14 +57,14 @@ class ChannelManager {
         });
         
         this.saveChannelData();
-        console.log(`📝 Channel ${channelId} enregistré pour utilisateur ${userId}`);
+        console.log(`📝 Channel ${channelId} registered for user ${userId}`);
     }
 
     unregisterChannel(channelId) {
         if (this.channelData.activeChannels[channelId]) {
             delete this.channelData.activeChannels[channelId];
             this.saveChannelData();
-            console.log(`🗑️ Channel ${channelId} désenregistré`);
+            console.log(`🗑️ Channel ${channelId} unregistered`);
         }
     }
 

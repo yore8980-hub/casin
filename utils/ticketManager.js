@@ -30,7 +30,7 @@ function loadTickets() {
             return JSON.parse(data);
         }
     } catch (error) {
-        console.error('Erreur lors du chargement des tickets:', error);
+        console.error('Error loading tickets:', error);
     }
     
     return getDefaultData();
@@ -48,7 +48,7 @@ function saveTickets(data) {
         fs.writeFileSync(TICKETS_FILE, JSON.stringify(data, null, 2));
         return true;
     } catch (error) {
-        console.error('Erreur lors de la sauvegarde des tickets:', error);
+        console.error('Error saving tickets:', error);
         return false;
     }
 }

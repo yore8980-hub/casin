@@ -35,7 +35,7 @@ module.exports = {
         // Check if interaction is too old
         const interactionAge = Date.now() - interaction.createdTimestamp;
         if (interactionAge > 10 * 60 * 1000) {
-            console.log('Interaction trop ancienne, ignorée');
+            console.log('Interaction too old, ignored');
             return;
         }
         
@@ -119,7 +119,7 @@ module.exports = {
                 await interaction.editReply({ embeds: [successEmbed] });
                 
             } catch (sendError) {
-                console.error('Erreur envoi panel:', sendError);
+                console.error('Panel send error:', sendError);
                 
                 const errorEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
@@ -131,7 +131,7 @@ module.exports = {
             }
             
         } catch (error) {
-            console.error('Erreur setpanel:', error);
+            console.error('Setpanel error:', error);
             
             const errorEmbed = new EmbedBuilder()
                 .setColor('#ff0000')

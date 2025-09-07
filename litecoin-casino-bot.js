@@ -2,7 +2,7 @@ const fs = require('fs');
 const litecore = require('litecore-lib');
 const litecoinDirect = require('./utils/litecoinDirect.js');
 
-// Configuration pour connexion directe (pas d'API key nécessaire)
+// Configuration for direct connection (no API key required)
 const NETWORK = 'ltc'; // Litecoin mainnet
 
 // File to store generated addresses
@@ -99,7 +99,7 @@ async function checkDeposits() {
     const addresses = loadAddresses();
     
     if (addresses.length === 0) {
-        console.log('ℹ️  Aucune adresse à vérifier');
+        console.log('ℹ️  No addresses to verify');
         return;
     }
     
@@ -107,7 +107,7 @@ async function checkDeposits() {
     
     for (let i = 0; i < addresses.length; i++) {
         const addressData = addresses[i];
-        console.log(`🔍 Vérification ${i + 1}/${addresses.length}: ${addressData.address.substring(0, 10)}...`);
+        console.log(`🔍 Verification ${i + 1}/${addresses.length}: ${addressData.address.substring(0, 10)}...`);
         
         const currentBalance = await getAddressBalance(addressData.address);
         
@@ -120,7 +120,7 @@ async function checkDeposits() {
             addresses[i].balance = currentBalance;
             addresses[i].lastChecked = new Date().toISOString();
         } else if (currentBalance === addressData.balance) {
-            console.log(`ℹ️  Aucun nouveau dépôt pour ${addressData.address.substring(0, 10)}...`);
+            console.log(`ℹ️  No new deposits for ${addressData.address.substring(0, 10)}...`);
         }
         
         // Délai de 5 secondes pour être respectueux envers les explorateurs publics
@@ -141,7 +141,7 @@ async function getAddressUTXOs(address) {
     try {
         return await litecoinDirect.getAddressUTXOs(address, false); // false = mainnet
     } catch (error) {
-        console.error('Erreur UTXO:', error.message);
+        console.error('UTXO error:', error.message);
         return [];
     }
 }
@@ -155,7 +155,7 @@ async function broadcastTransaction(txHex) {
     try {
         return await litecoinDirect.broadcastTransaction(txHex, false); // false = mainnet
     } catch (error) {
-        console.error('Erreur de diffusion:', error.message);
+        console.error('Broadcast error:', error.message);
         return null;
     }
 }
@@ -238,7 +238,7 @@ async function withdraw(fromAddress, toAddress, amount, feeRate = 1) {
         
         // Sérialisation de la transaction
         const txHex = transaction.serialize();
-        console.log(`📤 Transaction créée (${txHex.length/2} bytes): ${txHex.substring(0, 64)}...`);
+        console.log(`📤 Transaction created (${txHex.length/2} bytes): ${txHex.substring(0, 64)}...`);
         
         // Diffusion sur le réseau
         const txid = await broadcastTransaction(txHex);
