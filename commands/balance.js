@@ -17,7 +17,7 @@ module.exports = {
         // Check if interaction is too old
         const interactionAge = Date.now() - interaction.createdTimestamp;
         if (interactionAge > 10 * 60 * 1000) {
-            console.log('Interaction trop ancienne, ignorée');
+            console.log('Interaction too old, ignored');
             return;
         }
         

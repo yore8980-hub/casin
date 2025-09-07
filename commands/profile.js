@@ -12,7 +12,7 @@ module.exports = {
         // Check if interaction is too old (Discord timeout is 15 minutes)
         const interactionAge = Date.now() - interaction.createdTimestamp;
         if (interactionAge > 10 * 60 * 1000) { // 10 minutes safety margin
-            console.log('Interaction trop ancienne, ignorée');
+            console.log('Interaction too old, ignored');
             return;
         }
         
