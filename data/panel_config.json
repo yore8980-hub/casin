@@ -1,14 +1,14 @@
 {
   "panels": {
     "casinoPanel": {
-      "channelId": null,
-      "messageId": null,
+      "channelId": "1414235182046642226",
+      "messageId": "1414252944093741219",
       "ticketCategory": null,
       "staffRole": null
     },
     "addBalancePanel": {
-      "channelId": "1414005489733468261",
-      "messageId": "1414176073037647883",
+      "channelId": "1414235157023690822",
+      "messageId": "1414252887055536279",
       "ticketCategory": "1414005381981798530",
       "staffRole": "1414005431457546463"
     }

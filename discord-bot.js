@@ -122,6 +122,20 @@ client.on(Events.InteractionCreate, async interaction => {
                 console.log('🎰 Casino roulette button clicked');
                 await handleCasinoRoulette(interaction);
             }
+            // Game explanation buttons
+            else if (interaction.customId === 'explain_blackjack') {
+                await handleExplainBlackjack(interaction);
+            }
+            else if (interaction.customId === 'explain_roulette') {
+                await handleExplainRoulette(interaction);
+            }
+            else if (interaction.customId === 'explain_coinflip') {
+                await handleExplainCoinflip(interaction);
+            }
+            // Private session button
+            else if (interaction.customId === 'create_private_session') {
+                await handleCreatePrivateSession(interaction);
+            }
             // Other button handlers can be added here
             else {
                 console.log(`❓ Unknown button interaction: ${interaction.customId}`);
@@ -872,8 +886,131 @@ async function notifyUserOfDeposit(deposit) {
             }
         }
     } catch (error) {
-        console.log('Impossible de notifier l\'utilisateur du dépôt:', error.message);
+        console.log('Unable to notify user of deposit:', error.message);
     }
+}
+
+// Game explanation handlers
+async function handleExplainBlackjack(interaction) {
+    const embed = new EmbedBuilder()
+        .setColor('#ff6b6b')
+        .setTitle('🃏 How to Play Blackjack')
+        .setDescription('Beat the dealer by getting closer to 21 without going over!')
+        .addFields(
+            {
+                name: '🎯 Objective',
+                value: 'Get a hand value closer to 21 than the dealer without exceeding it.',
+                inline: false
+            },
+            {
+                name: '🃏 Card Values',
+                value: '• Number cards (2-10): Face value\n• Face cards (J, Q, K): 10 points\n• Ace: 1 or 11 points (best value automatically chosen)',
+                inline: false
+            },
+            {
+                name: '🎮 How to Play',
+                value: '1. Use `/blackjack <amount>` in this channel\n2. You and dealer get 2 cards each\n3. Choose to Hit (get another card) or Stand (keep current hand)\n4. Try to get closer to 21 than the dealer!',
+                inline: false
+            },
+            {
+                name: '🏆 Winning Conditions',
+                value: '• **Blackjack**: 21 with first 2 cards (pays 3:2)\n• **Win**: Closer to 21 than dealer (pays 1:1)\n• **Push**: Same value as dealer (bet returned)\n• **Bust**: Over 21 (lose bet)',
+                inline: false
+            }
+        )
+        .setFooter({ text: 'Good luck at the tables!' })
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleExplainRoulette(interaction) {
+    const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setTitle('🎲 How to Play Roulette')
+        .setDescription('Place your bets and watch the wheel spin!')
+        .addFields(
+            {
+                name: '🎯 Objective',
+                value: 'Predict where the ball will land on the spinning wheel.',
+                inline: false
+            },
+            {
+                name: '🎮 How to Play',
+                value: '1. Use `/roulette <amount>` in this channel\n2. Choose your bet type:\n   • Number bet (0-36)\n   • Color bet (Red/Black)\n   • Even/Odd bet\n3. Watch the wheel spin and see if you win!',
+                inline: false
+            },
+            {
+                name: '💰 Payouts',
+                value: '• **Number bet**: 35:1 (guess exact number)\n• **Color bet**: 1:1 (red or black)\n• **Even/Odd bet**: 1:1 (even or odd numbers)\n• **Zero**: Wins number bets only',
+                inline: false
+            },
+            {
+                name: '🎰 The Wheel',
+                value: 'European wheel with numbers 0-36. Zero (0) is green, others alternate red and black.',
+                inline: false
+            }
+        )
+        .setFooter({ text: 'Place your bets!' })
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleExplainCoinflip(interaction) {
+    const embed = new EmbedBuilder()
+        .setColor('#ffd700')
+        .setTitle('🪙 How to Play Coinflip')
+        .setDescription('The simplest casino game - just pick heads or tails!')
+        .addFields(
+            {
+                name: '🎯 Objective',
+                value: 'Predict the outcome of a coin flip.',
+                inline: false
+            },
+            {
+                name: '🎮 How to Play',
+                value: '1. Use `/coinflip <amount>` in this channel\n2. Choose Heads or Tails\n3. Watch the coin flip!\n4. If you guess correctly, you double your bet!',
+                inline: false
+            },
+            {
+                name: '💰 Payouts',
+                value: '• **Correct guess**: 1:1 (double your money)\n• **Wrong guess**: Lose your bet\n• **50/50 chance** - pure luck!',
+                inline: false
+            },
+            {
+                name: '🎲 Perfect for Beginners',
+                value: 'No strategy needed - just pick your side and hope for the best!',
+                inline: false
+            }
+        )
+        .setFooter({ text: 'Flip that coin!' })
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleCreatePrivateSession(interaction) {
+    const embed = new EmbedBuilder()
+        .setColor('#5865f2')
+        .setTitle('🔒 Create Private Session')
+        .setDescription('Private sessions are coming soon! This feature will allow you to:')
+        .addFields(
+            {
+                name: '🚧 Coming Soon',
+                value: '• Create private gaming rooms\n• Invite specific players\n• Set custom betting limits\n• Enhanced privacy controls',
+                inline: false
+            },
+            {
+                name: '🎮 Available Commands',
+                value: 'For now, use the regular game commands:\n• `/blackjack <amount>`\n• `/roulette <amount>`\n• `/coinflip <amount>`',
+                inline: false
+            }
+        )
+        .setFooter({ text: 'Feature under development' })
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 // Export for external use
