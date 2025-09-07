@@ -4,6 +4,7 @@ const path = require('path');
 
 // Import Litecoin wallet system
 const ltcWallet = require('./litecoin-casino-bot.js');
+const LiveRoulette = require('./utils/liveRoulette.js');
 
 // Create Discord client
 const client = new Client({
@@ -14,6 +15,9 @@ const client = new Client({
         GatewayIntentBits.GuildMembers
     ]
 });
+
+// Initialize live roulette
+const liveRoulette = new LiveRoulette(client);
 
 // Commands collection
 client.commands = new Collection();
@@ -135,6 +139,17 @@ client.on(Events.InteractionCreate, async interaction => {
             // Private session button
             else if (interaction.customId === 'create_private_session') {
                 await handleCreatePrivateSession(interaction);
+            }
+            // Channel management buttons
+            else if (interaction.customId === 'close_channel') {
+                await handleCloseChannel(interaction);
+            }
+            else if (interaction.customId === 'close_session') {
+                await handleCloseSession(interaction);
+            }
+            // Live roulette buttons
+            else if (interaction.customId.startsWith('live_roulette_')) {
+                await handleLiveRouletteBet(interaction);
             }
             // Other button handlers can be added here
             else {
@@ -1231,6 +1246,209 @@ client.on('disconnect', () => {
 
 client.on('reconnecting', () => {
     console.log('🔄 Reconnexion en cours...');
+});
+
+// Channel management handlers
+async function handleCloseChannel(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const channel = interaction.channel;
+        const channelManager = require('./utils/channelManager.js');
+        
+        // Check if user owns this channel
+        const channelInfo = channelManager.getChannelInfo(channel.id);
+        if (!channelInfo || channelInfo.userId !== interaction.user.id) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Permission Denied')
+                .setDescription('You can only close channels that belong to you.')
+                .setTimestamp();
+                
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const confirmEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Channel Closed')
+            .setDescription('This channel will be deleted in 5 seconds...')
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [confirmEmbed] });
+        
+        // Clean up and delete channel
+        setTimeout(async () => {
+            try {
+                channelManager.unregisterChannel(channel.id);
+                await channel.delete('User requested closure');
+            } catch (error) {
+                console.error('Error deleting channel:', error);
+            }
+        }, 5000);
+        
+    } catch (error) {
+        console.error('❌ Close channel error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('Failed to close channel.')
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleCloseSession(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const channel = interaction.channel;
+        const expectedName = `session-${interaction.user.username.toLowerCase()}`;
+        
+        // Check if user owns this session
+        if (channel.name !== expectedName) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Permission Denied')
+                .setDescription('You can only close your own private sessions.')
+                .setTimestamp();
+                
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const confirmEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Session Ended')
+            .setDescription('Your private session will be deleted in 5 seconds...')
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [confirmEmbed] });
+        
+        // Delete session after delay
+        setTimeout(async () => {
+            try {
+                await channel.delete('Session ended by user');
+            } catch (error) {
+                console.error('Error deleting session:', error);
+            }
+        }, 5000);
+        
+    } catch (error) {
+        console.error('❌ Close session error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('Failed to close session.')
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleLiveRouletteBet(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const betType = interaction.customId.replace('live_roulette_', '');
+        const userId = interaction.user.id;
+        
+        // For now, use a fixed bet amount of 0.01 LTC
+        const betAmount = 0.01;
+        
+        // Check if user has balance
+        const userProfiles = require('./utils/userProfiles.js');
+        const profile = userProfiles.getUserProfile(userId);
+        
+        if (profile.balance < betAmount) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Insufficient Balance')
+                .setDescription(`You need at least ${betAmount.toFixed(3)} LTC to place this bet.`)
+                .addFields({
+                    name: '💰 Your Balance',
+                    value: `${profile.balance.toFixed(8)} LTC`,
+                    inline: false
+                })
+                .setTimestamp();
+                
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Place bet in live roulette
+        const result = liveRoulette.placeBet(userId, betType, betAmount);
+        
+        if (!result.success) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff9900')
+                .setTitle('⚠️ Betting Closed')
+                .setDescription(result.message)
+                .setTimestamp();
+                
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Deduct bet from balance
+        profile.balance -= betAmount;
+        userProfiles.saveProfile(userId, profile);
+        
+        const successEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Bet Placed!')
+            .setDescription(`Your bet on **${betType}** has been placed for the live roulette.`)
+            .addFields(
+                { name: '🎯 Bet Type', value: betType.charAt(0).toUpperCase() + betType.slice(1), inline: true },
+                { name: '💰 Bet Amount', value: `${betAmount.toFixed(3)} LTC`, inline: true },
+                { name: '💳 Remaining Balance', value: `${profile.balance.toFixed(8)} LTC`, inline: true }
+            )
+            .setFooter({ text: 'Good luck! Results will be announced in the live channel.' })
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [successEmbed] });
+        
+    } catch (error) {
+        console.error('❌ Live roulette bet error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('Failed to place bet.')
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+// Function to start live roulette when server is configured
+function startLiveRouletteIfConfigured() {
+    try {
+        const fs = require('fs');
+        if (fs.existsSync('./data/server_config.json')) {
+            const allConfigs = JSON.parse(fs.readFileSync('./data/server_config.json', 'utf8'));
+            
+            for (const [guildId, config] of Object.entries(allConfigs)) {
+                if (config.liveRouletteChannel) {
+                    const channel = client.channels.cache.get(config.liveRouletteChannel);
+                    if (channel) {
+                        liveRoulette.start(config.liveRouletteChannel);
+                        console.log(`🎰 Live roulette started for guild ${guildId}`);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error starting live roulette:', error);
+    }
+}
+
+// Start live roulette when bot is ready
+client.once('ready', () => {
+    setTimeout(startLiveRouletteIfConfigured, 5000); // Wait 5 seconds after bot is ready
 });
 
 // Fonction de reconnexion automatique
