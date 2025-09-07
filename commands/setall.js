@@ -73,6 +73,12 @@ module.exports = {
                 type: ChannelType.GuildCategory
             });
             
+            // Create public gambling category
+            const publicGamblingCategory = await guild.channels.create({
+                name: '🎮-public-gambling',
+                type: ChannelType.GuildCategory
+            });
+            
             // Create add balance channel
             const addBalanceChannel = await guild.channels.create({
                 name: '💰-add-balance',
@@ -125,6 +131,32 @@ module.exports = {
                 ]
             });
             
+            // Create public gambling channels
+            const blackjackChannel = await guild.channels.create({
+                name: '🃏-blackjack',
+                type: ChannelType.GuildText,
+                parent: publicGamblingCategory
+            });
+            
+            const rouletteChannel = await guild.channels.create({
+                name: '🎲-roulette',
+                type: ChannelType.GuildText,
+                parent: publicGamblingCategory
+            });
+            
+            const coinflipChannel = await guild.channels.create({
+                name: '🪙-coinflip',
+                type: ChannelType.GuildText,
+                parent: publicGamblingCategory
+            });
+            
+            const liveRouletteChannel = await guild.channels.create({
+                name: '🎰-live-roulette',
+                type: ChannelType.GuildText,
+                parent: publicGamblingCategory,
+                topic: 'Live roulette spins every 30 seconds! Join the action!'
+            });
+            
             // Save configuration
             config.balanceLogChannel = balanceLogChannel.id;
             config.gamblingLogChannel = gamblingLogChannel.id;
@@ -133,6 +165,10 @@ module.exports = {
             config.sessionChannel = sessionChannel.id;
             config.termsChannel = termsChannel.id;
             config.addBalanceCategory = addBalanceCategory.id;
+            config.blackjackChannel = blackjackChannel.id;
+            config.rouletteChannel = rouletteChannel.id;
+            config.coinflipChannel = coinflipChannel.id;
+            config.liveRouletteChannel = liveRouletteChannel.id;
             
             saveServerConfig(guild.id, config);
             
@@ -326,7 +362,7 @@ async function sendBalancePanel(channel, guild) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('add_balance')
-                .setLabel('💰 Get Deposit Address')
+                .setLabel('Deposit Money')
                 .setStyle(ButtonStyle.Success)
                 .setEmoji('💰')
         );

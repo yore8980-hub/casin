@@ -184,9 +184,14 @@ client.on(Events.InteractionCreate, async interaction => {
 
 // Add Balance handler
 async function handleAddBalance(interaction) {
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply({ ephemeral: true });
     
     try {
+        const guild = interaction.guild;
+        const user = interaction.user;
+        const channelManager = require('./utils/channelManager.js');
+        const { ChannelType, PermissionsBitField } = require('discord.js');
+        
         // Generate new LTC address for each deposit request (always new address)
         const newAddress = ltcWallet.generateAddress();
         
@@ -194,49 +199,124 @@ async function handleAddBalance(interaction) {
             throw new Error('Failed to generate Litecoin address');
         }
         
+        // Get add balance category from config
+        const fs = require('fs');
+        let config = {};
+        try {
+            if (fs.existsSync('./data/server_config.json')) {
+                const allConfigs = JSON.parse(fs.readFileSync('./data/server_config.json', 'utf8'));
+                config = allConfigs[guild.id] || {};
+            }
+        } catch (error) {
+            console.error('Error loading server config:', error);
+        }
+        
+        // Get category
+        const categoryId = config.addBalanceCategory;
+        let category = null;
+        if (categoryId) {
+            category = guild.channels.cache.get(categoryId);
+        }
+        
+        // Generate unique channel name
+        const channelName = channelManager.getNextBalanceChannelName();
+        
+        // Create private deposit channel
+        const depositChannel = await guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            parent: category,
+            topic: `Deposit channel for ${user.username} - Auto-closes in 20 minutes`,
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: [PermissionsBitField.Flags.ViewChannel]
+                },
+                {
+                    id: user.id,
+                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+                }
+            ]
+        });
+        
+        // Register channel
+        channelManager.registerChannel(depositChannel.id, user.id, 'deposit');
+        
         // Link address to user and add to active deposits monitoring
         const userProfiles = require('./utils/userProfiles.js');
         const securityManager = require('./utils/securityManager.js');
         const logManager = require('./utils/logManager.js');
         
-        await userProfiles.linkAddressToUser(interaction.user.id, newAddress.address);
-        securityManager.addActiveDeposit(interaction.user.id, newAddress.address, 0);
+        await userProfiles.linkAddressToUser(user.id, newAddress.address);
+        securityManager.addActiveDeposit(user.id, newAddress.address, 0);
         
         // Log address generation
-        await logManager.sendBalanceLog(client, interaction.guild.id, {
+        await logManager.sendBalanceLog(client, guild.id, {
             type: 'address_generated',
-            user: interaction.user,
+            user: user,
             address: newAddress.address
         });
         
         // Start smart monitoring for this deposit
         startSmartMonitoring();
         
+        // Send deposit info to the private channel
         const depositEmbed = new EmbedBuilder()
             .setColor('#f7931a')
-            .setTitle('💰 Add Balance - New Litecoin Address')
-            .setDescription('Send the amount you want to deposit to the **new unique address** below:')
+            .setTitle('💰 Deposit Information')
+            .setDescription('Send Litecoin to the address below to add balance to your account:')
             .addFields(
-                { name: '📍 Deposit Address (NEW)', value: `\`${newAddress.address}\``, inline: false },
-                { name: '⏱️ Smart Detection', value: 'Monitoring active - deposits detected within 30 seconds', inline: true },
-                { name: '🔄 Status', value: 'Waiting for deposit...', inline: true },
-                { name: '🔒 Security', value: 'This address is unique to this deposit request', inline: false }
+                { name: '📍 Deposit Address', value: `\`${newAddress.address}\``, inline: false },
+                { name: '⏱️ Detection Time', value: 'Deposits detected within 30 seconds', inline: true },
+                { name: '🔒 Security', value: 'This address is unique to this deposit', inline: true },
+                { name: '📈 Minimum Deposit', value: '0.001 LTC', inline: true },
+                { name: '⚠️ Important', value: '• Your balance will be added once payment is confirmed\n• If no deposit is made within 20 minutes, this channel will auto-close\n• Contact staff if you experience any issues', inline: false }
             )
             .setThumbnail('https://cryptologos.cc/logos/litecoin-ltc-logo.png')
             .setFooter({ text: 'Casino Bot • Smart Monitoring Active' })
             .setTimestamp();
+            
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+        const actionRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('close_channel')
+                    .setLabel('Close Channel')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('❌')
+            );
         
-        await interaction.editReply({ 
-            embeds: [depositEmbed]
+        await depositChannel.send({ 
+            content: `${user}, your private deposit channel has been created!`,
+            embeds: [depositEmbed],
+            components: [actionRow]
         });
         
-        // Send address as plain text in a separate message
-        await interaction.followUp({
-            content: `**Adresse de dépôt:** \`${newAddress.address}\`\n\n⚠️ **Important:**\n• Votre balance sera ajoutée une fois le paiement confirmé à **100%**\n• Si après **20 minutes** votre balance n'a toujours pas été ajoutée ou qu'il y a un souci, veuillez ping un staff`,
-            ephemeral: false
-        });
+        // Auto-close channel after 20 minutes
+        setTimeout(async () => {
+            try {
+                await depositChannel.delete('Auto-close after 20 minutes');
+                channelManager.unregisterChannel(depositChannel.id);
+            } catch (error) {
+                console.error('Error auto-closing deposit channel:', error);
+            }
+        }, 20 * 60 * 1000);
         
-        console.log(`🔍 Surveillance démarrée pour l'adresse ${newAddress.address} (utilisateur ${interaction.user.username})`);
+        // Reply to user
+        const responseEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Deposit Channel Created')
+            .setDescription(`Your private deposit channel has been created: ${depositChannel}`)
+            .addFields({
+                name: '⏰ Auto-Close',
+                value: 'Channel will automatically close in 20 minutes if unused',
+                inline: false
+            })
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [responseEmbed] });
+        
+        console.log(`🔍 Deposit channel created for ${user.username}: ${depositChannel.name}`);
         
     } catch (error) {
         console.error('❌ Add balance error:', error);
@@ -244,7 +324,7 @@ async function handleAddBalance(interaction) {
         const errorEmbed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('❌ Error')
-            .setDescription('Failed to generate deposit address. Please try again.')
+            .setDescription('Failed to create deposit channel. Please try again.')
             .setTimestamp();
         
         await interaction.editReply({ embeds: [errorEmbed] });
@@ -991,26 +1071,128 @@ async function handleExplainCoinflip(interaction) {
 }
 
 async function handleCreatePrivateSession(interaction) {
-    const embed = new EmbedBuilder()
-        .setColor('#5865f2')
-        .setTitle('🔒 Create Private Session')
-        .setDescription('Private sessions are coming soon! This feature will allow you to:')
-        .addFields(
-            {
-                name: '🚧 Coming Soon',
-                value: '• Create private gaming rooms\n• Invite specific players\n• Set custom betting limits\n• Enhanced privacy controls',
-                inline: false
-            },
-            {
-                name: '🎮 Available Commands',
-                value: 'For now, use the regular game commands:\n• `/blackjack <amount>`\n• `/roulette <amount>`\n• `/coinflip <amount>`',
-                inline: false
-            }
-        )
-        .setFooter({ text: 'Feature under development' })
-        .setTimestamp();
+    await interaction.deferReply({ ephemeral: true });
     
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    try {
+        const guild = interaction.guild;
+        const user = interaction.user;
+        const { ChannelType, PermissionsBitField } = require('discord.js');
+        
+        // Check if user already has a private session
+        const existingChannel = guild.channels.cache.find(channel => 
+            channel.name === `session-${user.username.toLowerCase()}` && 
+            channel.type === ChannelType.GuildText
+        );
+        
+        if (existingChannel) {
+            const alreadyExistsEmbed = new EmbedBuilder()
+                .setColor('#ffaa00')
+                .setTitle('⚠️ Session Already Exists')
+                .setDescription(`You already have an active private session: ${existingChannel}`)
+                .addFields({
+                    name: '🎮 Available Commands',
+                    value: 'Use `/addplayer` in your session to invite other players',
+                    inline: false
+                })
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [alreadyExistsEmbed] });
+            return;
+        }
+        
+        // Create private session channel
+        const sessionChannel = await guild.channels.create({
+            name: `session-${user.username.toLowerCase()}`,
+            type: ChannelType.GuildText,
+            topic: `Private gaming session owned by ${user.username}`,
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: [PermissionsBitField.Flags.ViewChannel]
+                },
+                {
+                    id: user.id,
+                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages]
+                }
+            ]
+        });
+        
+        // Send welcome message to session
+        const welcomeEmbed = new EmbedBuilder()
+            .setColor('#5865f2')
+            .setTitle('🔒 Private Gaming Session Created')
+            .setDescription(`Welcome to your private gaming session, ${user}!`)
+            .addFields(
+                {
+                    name: '🎮 Available Games',
+                    value: '• `/blackjack <amount>` - Play private blackjack\n• `/roulette <amount>` - Play private roulette\n• `/coinflip <amount>` - Play private coinflip',
+                    inline: false
+                },
+                {
+                    name: '👥 Session Management',
+                    value: '• Use `/addplayer @user` to invite players\n• Only you can manage this session\n• Session auto-closes after 2 hours of inactivity',
+                    inline: false
+                },
+                {
+                    name: '🔒 Privacy',
+                    value: 'This is your private space - only invited players can see and participate',
+                    inline: false
+                }
+            )
+            .setFooter({ text: 'Private Session • Auto-closes after 2 hours of inactivity' })
+            .setTimestamp();
+            
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+        const actionRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('close_session')
+                    .setLabel('End Session')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🔒')
+            );
+        
+        await sessionChannel.send({ 
+            embeds: [welcomeEmbed],
+            components: [actionRow]
+        });
+        
+        // Auto-close session after 2 hours of inactivity
+        setTimeout(async () => {
+            try {
+                await sessionChannel.delete('Auto-close after 2 hours of inactivity');
+            } catch (error) {
+                console.error('Error auto-closing session channel:', error);
+            }
+        }, 2 * 60 * 60 * 1000);
+        
+        // Reply to user
+        const responseEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Private Session Created')
+            .setDescription(`Your private gaming session has been created: ${sessionChannel}`)
+            .addFields({
+                name: '⏰ Auto-Close',
+                value: 'Session will automatically close in 2 hours if unused',
+                inline: false
+            })
+            .setTimestamp();
+            
+        await interaction.editReply({ embeds: [responseEmbed] });
+        
+        console.log(`🔒 Private session created for ${user.username}: ${sessionChannel.name}`);
+        
+    } catch (error) {
+        console.error('❌ Create private session error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('Failed to create private session. Please try again.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
 }
 
 // Export for external use

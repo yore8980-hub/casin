@@ -16,11 +16,12 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('choice')
-                .setDescription('Choose heads or tails')
+                .setDescription('Choose heads, tails, or random')
                 .setRequired(true)
                 .addChoices(
                     { name: '🦅 Heads', value: 'heads' },
-                    { name: '⚡ Tails', value: 'tails' }
+                    { name: '⚡ Tails', value: 'tails' },
+                    { name: '🎲 Random Side', value: 'random' }
                 )
         ),
 
@@ -29,8 +30,13 @@ module.exports = {
 
         try {
             const amount = interaction.options.getNumber('amount');
-            const playerChoice = interaction.options.getString('choice');
+            let playerChoice = interaction.options.getString('choice');
             const userId = interaction.user.id;
+            
+            // Handle random choice
+            if (playerChoice === 'random') {
+                playerChoice = Math.random() < 0.5 ? 'heads' : 'tails';
+            }
 
             // Check if user has active gambling session
             if (!securityManager.hasActiveGamblingSession(userId)) {

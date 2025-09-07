@@ -193,7 +193,7 @@ async function sendBalancePanel(channel, guild) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('add_balance')
-                .setLabel('💰 Get Deposit Address')
+                .setLabel('Deposit Money')
                 .setStyle(ButtonStyle.Success)
                 .setEmoji('💰')
         );

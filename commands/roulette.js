@@ -197,18 +197,36 @@ function createBettingComponents() {
                 .setEmoji('🔼')
         );
     
-    const numberSelect = new ActionRowBuilder()
+    const numberSelect1 = new ActionRowBuilder()
         .addComponents(
             new StringSelectMenuBuilder()
-                .setCustomId('roulette_bet_number')
-                .setPlaceholder('Choose a number (0-36) for 35:1 payout')
+                .setCustomId('roulette_bet_number_1')
+                .setPlaceholder('Numbers 0-24 (35:1 payout)')
                 .addOptions(
-                    Array.from({ length: 37 }, (_, i) => ({
+                    Array.from({ length: 25 }, (_, i) => ({
                         label: `Number ${i}`,
                         value: `number_${i}`,
                         description: `Bet on ${i} (35:1 payout)`,
                         emoji: i === 0 ? '🟢' : (wheel[i] === 'red' ? '🔴' : '⚫')
                     }))
+                )
+        );
+        
+    const numberSelect2 = new ActionRowBuilder()
+        .addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('roulette_bet_number_2')
+                .setPlaceholder('Numbers 25-36 (35:1 payout)')
+                .addOptions(
+                    Array.from({ length: 12 }, (_, i) => {
+                        const num = i + 25;
+                        return {
+                            label: `Number ${num}`,
+                            value: `number_${num}`,
+                            description: `Bet on ${num} (35:1 payout)`,
+                            emoji: wheel[num] === 'red' ? '🔴' : '⚫'
+                        };
+                    })
                 )
         );
     
@@ -231,7 +249,27 @@ function createBettingComponents() {
                 .setEmoji('❌')
         );
     
-    return [colorRow, oddEvenRow, numberSelect, actionRow];
+    // Add dozens and columns betting
+    const dozensRow = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('roulette_bet_dozen1')
+                .setLabel('1st Dozen (1-12)')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('1️⃣'),
+            new ButtonBuilder()
+                .setCustomId('roulette_bet_dozen2')
+                .setLabel('2nd Dozen (13-24)')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('2️⃣'),
+            new ButtonBuilder()
+                .setCustomId('roulette_bet_dozen3')
+                .setLabel('3rd Dozen (25-36)')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('3️⃣')
+        );
+
+    return [colorRow, oddEvenRow, dozensRow, numberSelect1, actionRow];
 }
 
 function formatBets(bets) {
