@@ -1,0 +1,14 @@
+{
+  "activeTickets": {
+    "ticket-1": {
+      "ticketId": "ticket-1",
+      "channelId": "1414176098140422249",
+      "userId": "1409315903937449994",
+      "username": "yoretobuydmyoredeco_91403",
+      "type": "balance",
+      "createdAt": 1757236256120,
+      "staffRoleId": null
+    }
+  },
+  "ticketCounter": 1
+}

@@ -1,0 +1,13 @@
+N’appelles pas dans le panel add balance le bouton « get deposit adress » mais « deposit money » 
+Ensuit les channels qui sont crees quand on interagit je veux qu’ils appellent balance-001 ensuite 002 ….. ansi de suite
+Je veux que dans le channel il y ait un bouton pour cancel, quand on clique dessus ca demande de confirmer le cancel et apres si on re clique que ca delete le channel 5 sec apres  ensuite je veux que tu fasses un bouton « copy adress » en dessous du deuxième message envoyé lorsqu’on clique sur generate deposit adress qui envoie en éphémère l’adresse ltc auquel on doit envoyer l’argent
+Je veux que le bot soit entièrement en anglais mais que la console soit n français (car ce bot sera utilisé apr des anglais mais géré par moi meme qui est français
+Je veux que dans le channel qui est créée pour add de la balance, ca envoie un message pour dire quand le paiement a été détecté donc non confirmé en pingant la personne qui veut deposit et puis ca re ping la personne en lui envoyant CETTE FOIS SEULEMENT egalement un dm quand CEST CONFIRME et ajoute largent a sa balance, en lui disant qu’il peut check sa balance a tout moment en faisant la commande /balance 
+Je voudrais egalement avoir un bouton pour setup une catégorie casino qui est faite par toi meme, et ou dans chaque channel qui a été crée et qui lui est désigné, est envoyé le panel correspondant et aussi que une catégorie ou ya les logs donc add balance et gamble (accessible seulement par les admins et modérateurs qui sont dans la whitelist) et une catégorie ou les channels private party soient crées et et ou les channels pour la balance aussi sont crées aussi ajoutes une commande /disable pour disable la session gambling qui a étéactivé par /enable et donc /disable ne requiert pas de mdp 
+Je veux egalement que les messages avec les recovery keys et bah ca soit indiqués et bah que ils se suppriment au bout de 30 mins pour la sécurité des fonds
+
+Je veux également que tu revois le panel, c’est a dire que plusieurs panel peuvent être envoyé avec la commande /setpanel. Le premier le panel addbalance bon ca change rien c’est bien
+Le panel gamble donc avec tout les jeux disponibles de gambling
+Le panel private party pour créer un private party ou la personne l’ayant crée peut ajouter des utilisateurs a la private party pour qu’ils gamble ensemble
+Et un panel pour chacun des jeux genre en tout on mets un channel ou ils vont tous êtres envoyés mais genre ya une embed par jeu, ou sont donnés les statistiques de win genre par eempel sur la roulette parier sur une couleur ou nombre pair/impair c une chance sur deux
+Aussi ajoutes un pile ou face en jeu gambling

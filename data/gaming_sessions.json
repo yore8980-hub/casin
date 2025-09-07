@@ -1,0 +1,26 @@
+[
+  {
+    "id": "session_1757246913966_ffs08u453",
+    "channelId": "1414220801388839074",
+    "hostId": "1409315903937449994",
+    "guildId": "1414005380937289841",
+    "sessionType": "blackjack",
+    "participants": [
+      "1409315903937449994"
+    ],
+    "createdAt": 1757246914217,
+    "expiresAt": 1757250514217,
+    "settings": {
+      "maxParticipants": 6,
+      "isPublic": false,
+      "allowSpectators": true,
+      "minBet": 0.001,
+      "maxBet": 1
+    },
+    "stats": {
+      "totalGames": 0,
+      "totalWagers": 0,
+      "participantCount": 1
+    }
+  }
+]

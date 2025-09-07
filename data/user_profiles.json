@@ -1,0 +1,65 @@
+{
+  "1409315903937449994": {
+    "userId": "1409315903937449994",
+    "balance": 0.01032078,
+    "totalDeposited": 0.01132078,
+    "totalWithdrawn": 0,
+    "depositHistory": [
+      {
+        "amount": 0.00102954,
+        "address": "LgMGwcxSxZNazF1D3ifnn1Qv14WqD73f89",
+        "txid": null,
+        "timestamp": "2025-09-07T09:13:06.063Z",
+        "confirmed": false
+      },
+      {
+        "amount": 0.01029124,
+        "address": "LfVNfAAacSMGKrnDdPkWJ2aEt1oyhepF4G",
+        "txid": null,
+        "timestamp": "2025-09-07T09:43:46.435Z",
+        "confirmed": false
+      }
+    ],
+    "withdrawalHistory": [],
+    "gameHistory": [
+      {
+        "amount": 0.001,
+        "from": "1409315903937449994",
+        "to": "1414003956077563904",
+        "timestamp": "2025-09-07T09:22:19.170Z",
+        "type": "transfer",
+        "action": "sent"
+      }
+    ],
+    "addresses": [
+      "LUwwCyDMVgzsn7taGQ96nEQmc2TSYqMyUW",
+      "LMHgMdL9DywfkkKKz572k2LSYuqPv8e27f",
+      "LgMGwcxSxZNazF1D3ifnn1Qv14WqD73f89",
+      "LXA7u47krunFSRrAmdxoFztqEJA7fdgBQo",
+      "LfVNfAAacSMGKrnDdPkWJ2aEt1oyhepF4G"
+    ],
+    "createdAt": "2025-09-06T22:17:29.547Z",
+    "lastActivity": "2025-09-07T09:43:46.435Z"
+  },
+  "1414003956077563904": {
+    "userId": "1414003956077563904",
+    "balance": 0.001,
+    "totalDeposited": 0,
+    "totalWithdrawn": 0,
+    "depositHistory": [],
+    "withdrawalHistory": [],
+    "gameHistory": [
+      {
+        "amount": 0.001,
+        "from": "1409315903937449994",
+        "to": "1414003956077563904",
+        "timestamp": "2025-09-07T09:22:19.170Z",
+        "type": "transfer",
+        "action": "received"
+      }
+    ],
+    "addresses": [],
+    "createdAt": "2025-09-07T09:22:19.170Z",
+    "lastActivity": "2025-09-07T09:22:19.171Z"
+  }
+}

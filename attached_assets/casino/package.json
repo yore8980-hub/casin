@@ -1,0 +1,32 @@
+{
+  "name": "litecoin-casino-discord-bot",
+  "version": "1.0.0",
+  "description": "A complete Litecoin casino Discord bot with automatic deposit detection, balance management, and currency conversion",
+  "main": "discord-bot.js",
+  "scripts": {
+    "start": "node discord-bot.js",
+    "start-ltc": "node litecoin-casino-bot.js",
+    "deploy": "node deploy-commands.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "litecoin",
+    "casino",
+    "crypto",
+    "gambling"
+  ],
+  "author": "Casino Bot Developer",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^22.13.11",
+    "axios": "^1.11.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "bitcore-lib-ltc": "^10.10.5",
+    "discord.js": "^14.22.1",
+    "dotenv": "^17.2.2",
+    "litecore-lib": "^0.13.22",
+    "tiny-secp256k1": "^2.2.4"
+  }
+}

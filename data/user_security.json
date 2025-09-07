@@ -1,0 +1,20 @@
+{
+  "1409315903937449994": {
+    "userId": "1409315903937449994",
+    "hasPassword": true,
+    "passwordHash": "4c9478e70d986d0a886775ca9561bc7d:36a06cdbb807588f7d4e31cb81cd638f7b9d8952ab09e6f6c7bd66ba013e241e0e80b8dbbd7e3816a06903a07eb44c730bbd3eff3d7c7cc792fe30427fbb5b47",
+    "recoveryKey": "0F25A15EBC83E61BA7EBE6D2765DCECE",
+    "depositRequests": [],
+    "lastGamblingSession": {
+      "userId": "1409315903937449994",
+      "startTime": "2025-09-07T09:49:21.485Z",
+      "endTime": "2025-09-07T09:50:21.485Z",
+      "durationMinutes": 1,
+      "active": true
+    },
+    "wageredAmount": 0,
+    "depositedAmount": 0.01132078,
+    "canCashout": false,
+    "createdAt": "2025-09-06T22:21:34.193Z"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "panels": {
+    "casinoPanel": {
+      "channelId": null,
+      "messageId": null,
+      "ticketCategory": null,
+      "staffRole": null
+    },
+    "addBalancePanel": {
+      "channelId": "1414005489733468261",
+      "messageId": "1414176073037647883",
+      "ticketCategory": "1414005381981798530",
+      "staffRole": "1414005431457546463"
+    }
+  },
+  "whitelist": {
+    "serverIds": [],
+    "adminRoles": []
+  }
+}
