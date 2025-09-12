@@ -20,7 +20,6 @@ const liveRouletteSessions = new Map();
 
 // GIF URLs
 const SPINNING_GIF = 'https://images-ext-1.discordapp.net/external/u8-37Lffp-3TZre-_9pbURs23xL1L9wpWWCMZtFAQtc/https/raw.githubusercontent.com/GiorgosLiaskosds20076/RoulettePics/main/spinning_gif.gif';
-const TABLE_IMAGE = 'https://raw.githubusercontent.com/GiorgosLiaskosds20076/RoulettePics/main/roulette_table.png';
 
 module.exports = {
     data: new SlashCommandBuilder()
