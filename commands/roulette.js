@@ -102,17 +102,9 @@ module.exports = {
                 numbers = [...new Set(numArray)]; // Remove duplicates
             }
             
-            // Validate conflicting bets
-            if (couleur && (couleur === 'red' && couleur === 'black')) {
-                const errorEmbed = new EmbedBuilder()
-                    .setColor('#ff0000')
-                    .setTitle('❌ Paris Conflictuels')
-                    .setDescription('Vous ne pouvez pas parier sur rouge ET noir en même temps.')
-                    .setTimestamp();
-                
-                await interaction.editReply({ embeds: [errorEmbed] });
-                return;
-            }
+            // Remove impossible validation - users can only select one color option
+            // The validation (couleur === 'red' && couleur === 'black') is impossible
+            // since couleur can only have one value at a time
             
             // Check if user has active spin
             if (activeSpins.has(userId)) {

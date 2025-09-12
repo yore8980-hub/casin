@@ -87,17 +87,8 @@ module.exports = {
             const game = createNewGame(bet, userId);
             activeGames.set(userId, game);
             
-            // Deal initial cards
-            dealInitialCards(game);
-            
-            // Create game embed
-            const gameEmbed = createGameEmbed(game, interaction.user);
-            const gameButtons = createGameButtons(game);
-            
-            await interaction.editReply({ 
-                embeds: [gameEmbed],
-                components: [gameButtons]
-            });
+            // Show card dealing animation
+            await showCardDealingAnimation(interaction, game);
             
             // Auto-timeout after 2 minutes
             setTimeout(() => {
@@ -215,30 +206,75 @@ function formatHand(hand, hideFirst = false) {
     }).join(' ');
 }
 
+// Card dealing animation function
+async function showCardDealingAnimation(interaction, game) {
+    const user = interaction.user;
+    
+    // Step 1: Show initial betting state
+    const bettingEmbed = new EmbedBuilder()
+        .setColor('#f7931a')
+        .setTitle('🎰 Blackjack - Partie Commencée!')
+        .setDescription(`**Mise:** ${formatLTC(game.bet)} LTC`)
+        .addFields(
+            { name: '🃏 Statut', value: 'Distribution des cartes en cours...', inline: false }
+        )
+        .setImage('https://media.giphy.com/media/3o7qDEq2bMbcbPRQ2c/giphy.gif')
+        .setTimestamp();
+    
+    await interaction.editReply({ embeds: [bettingEmbed] });
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Step 2: Deal initial cards
+    dealInitialCards(game);
+    
+    // Step 3: Show cards being dealt animation
+    const dealingEmbed = new EmbedBuilder()
+        .setColor('#ff9900')
+        .setTitle('🃏 Distribution des Cartes')
+        .setDescription('🎴 **CARTES DISTRIBUÉES** 🎴')
+        .setImage('https://media.giphy.com/media/l0ErO0YVpzRGVQfIs/giphy.gif')
+        .addFields(
+            { name: '🎯 Action', value: 'Le croupier distribue vos cartes...', inline: false }
+        )
+        .setTimestamp();
+    
+    await interaction.editReply({ embeds: [dealingEmbed] });
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Step 4: Show final game state
+    const gameEmbed = createGameEmbed(game, user);
+    const gameButtons = createGameButtons(game);
+    
+    await interaction.editReply({ 
+        embeds: [gameEmbed],
+        components: [gameButtons]
+    });
+}
+
 function createGameEmbed(game, user) {
     const playerHandStr = formatHand(game.playerHand);
     const dealerHandStr = formatHand(game.dealerHand, game.status === 'playing');
     
-    let title = '🃏 Blackjack Game';
+    let title = '🃏 Partie de Blackjack';
     let color = '#f7931a';
-    let description = `Bet: **${formatLTC(game.bet)} LTC**`;
+    let description = `Mise: **${formatLTC(game.bet)} LTC**`;
     
     if (game.status === 'won') {
-        title = '🎉 You Win!';
+        title = '🎉 Vous avez gagné!';
         color = '#00ff00';
-        description = `You won **${formatLTC(game.bet * 2)} LTC**!`;
+        description = `Vous avez gagné **${formatLTC(game.bet * 2)} LTC**!`;
     } else if (game.status === 'lost') {
-        title = '💸 You Lost';
+        title = '💸 Vous avez perdu';
         color = '#ff0000';
-        description = `You lost **${formatLTC(game.bet)} LTC**`;
+        description = `Vous avez perdu **${formatLTC(game.bet)} LTC**`;
     } else if (game.status === 'push') {
-        title = '🤝 Push (Tie)';
+        title = '🤝 Égalité';
         color = '#ffaa00';
-        description = `Your bet of **${formatLTC(game.bet)} LTC** has been returned`;
+        description = `Votre mise de **${formatLTC(game.bet)} LTC** vous a été rendue`;
     } else if (game.status === 'blackjack') {
         title = '🎯 BLACKJACK!';
         color = '#ffd700';
-        description = `You won **${formatLTC(game.bet * 2.5)} LTC** with Blackjack!`;
+        description = `Vous avez gagné **${formatLTC(game.bet * 2.5)} LTC** avec un Blackjack!`;
     }
     
     const embed = new EmbedBuilder()
@@ -247,23 +283,30 @@ function createGameEmbed(game, user) {
         .setDescription(description)
         .addFields(
             {
-                name: `👤 ${user.username}'s Hand (${game.playerValue})`,
+                name: `👤 Main de ${user.username} (${game.playerValue})`,
                 value: playerHandStr,
                 inline: false
             },
             {
-                name: `🎰 Dealer's Hand ${game.status === 'playing' ? '(?)' : `(${game.dealerValue})`}`,
+                name: `🎰 Main du Croupier ${game.status === 'playing' ? '(?)' : `(${game.dealerValue})`}`,
                 value: dealerHandStr,
                 inline: false
             }
         )
-        .setFooter({ text: 'Good luck!' })
+        .setFooter({ text: 'Bonne chance!' })
         .setTimestamp();
+    
+    // Add GIF for game outcomes
+    if (game.status === 'won' || game.status === 'blackjack') {
+        embed.setImage('https://media.giphy.com/media/g9582DNuQppxC/giphy.gif');
+    } else if (game.status === 'lost') {
+        embed.setImage('https://media.giphy.com/media/l2Je66zG6mAAZxgqI/giphy.gif');
+    }
     
     if (game.status !== 'playing') {
         const profile = userProfiles.getUserProfile(game.userId);
         embed.addFields({
-            name: '💰 New Balance',
+            name: '💰 Nouveau Solde',
             value: `${formatLTC(profile.balance)} LTC`,
             inline: true
         });

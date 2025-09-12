@@ -151,6 +151,13 @@ client.on(Events.InteractionCreate, async interaction => {
             else if (interaction.customId.startsWith('live_roulette_')) {
                 await handleLiveRouletteBet(interaction);
             }
+            // Coinflip progression buttons
+            else if (interaction.customId.startsWith('coinflip_double_')) {
+                await handleCoinflipDouble(interaction);
+            }
+            else if (interaction.customId === 'coinflip_cashout') {
+                await handleCoinflipCashout(interaction);
+            }
             // Other button handlers can be added here
             else {
                 console.log(`❓ Unknown button interaction: ${interaction.customId}`);
@@ -1443,6 +1450,136 @@ function startLiveRouletteIfConfigured() {
         }
     } catch (error) {
         console.error('Error starting live roulette:', error);
+    }
+}
+
+// Coinflip progression button handlers
+async function handleCoinflipDouble(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const betAmount = parseFloat(interaction.customId.split('_')[2]);
+        const userId = interaction.user.id;
+        
+        // Get coinflip command and its active sessions
+        const coinflipCommand = client.commands.get('coinflip');
+        const activeSessions = coinflipCommand.activeSessions || new Map();
+        
+        const session = activeSessions.get(userId);
+        if (!session) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Session Expirée')
+                .setDescription('Votre session de coinflip a expiré. Commencez une nouvelle partie avec `/coinflip`.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check user balance
+        const profile = require('./utils/userProfiles.js').getUserProfile(userId);
+        if (profile.balance < betAmount) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Solde Insuffisant')
+                .setDescription(`Vous avez besoin de ${betAmount.toFixed(8)} LTC pour doubler votre mise.`)
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Use the same choice as previous round
+        const previousChoice = session.lastChoice || 'heads';
+        
+        // Call the animation function from coinflip command
+        await coinflipCommand.showCoinflipAnimation(interaction, betAmount, previousChoice);
+        
+    } catch (error) {
+        console.error('Coinflip double error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Erreur')
+            .setDescription('Une erreur est survenue lors du double ou rien.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleCoinflipCashout(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const userId = interaction.user.id;
+        
+        // Get coinflip command and its active sessions
+        const coinflipCommand = client.commands.get('coinflip');
+        const activeSessions = coinflipCommand.activeSessions || new Map();
+        
+        const session = activeSessions.get(userId);
+        if (!session) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Session Expirée')
+                .setDescription('Votre session de coinflip a expiré.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Add winnings to user balance
+        const userProfiles = require('./utils/userProfiles.js');
+        const profile = userProfiles.getUserProfile(userId);
+        const finalBalance = profile.balance + session.totalWinnings;
+        userProfiles.updateUserProfile(userId, { balance: finalBalance });
+        
+        // Clear session
+        activeSessions.delete(userId);
+        
+        // Create cashout embed
+        const cashoutEmbed = new EmbedBuilder()
+            .setColor('#27ae60')
+            .setTitle('💰 Encaissement Réussi!')
+            .setDescription(`Vous avez encaissé vos gains avec succès!`)
+            .addFields(
+                {
+                    name: '🎉 Gains Encaissés',
+                    value: `${session.totalWinnings.toFixed(8)} LTC`,
+                    inline: true
+                },
+                {
+                    name: '🏆 Série de Victoires',
+                    value: `${session.streak} victoire(s) consécutive(s)`,
+                    inline: true
+                },
+                {
+                    name: '💳 Nouveau Solde',
+                    value: `${finalBalance.toFixed(8)} LTC`,
+                    inline: false
+                }
+            )
+            .setImage('https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif')
+            .setFooter({ text: 'Félicitations! Vous pouvez relancer une nouvelle partie.' })
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [cashoutEmbed] });
+        
+        console.log(`💰 ${interaction.user.username} cashed out ${session.totalWinnings.toFixed(8)} LTC from coinflip`);
+        
+    } catch (error) {
+        console.error('Coinflip cashout error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Erreur')
+            .setDescription('Une erreur est survenue lors de l\'encaissement.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
     }
 }
 
