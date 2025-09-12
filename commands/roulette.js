@@ -1,30 +1,37 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const userProfiles = require('../utils/userProfiles.js');
 const securityManager = require('../utils/securityManager.js');
 const logManager = require('../utils/logManager.js');
-const { formatLTC } = require('../utils/formatters.js');
 
-// Roulette wheel numbers and colors
+// European roulette wheel mapping (0-36)
 const wheel = {
-    0: 'green',
-    1: 'red', 2: 'black', 3: 'red', 4: 'black', 5: 'red', 6: 'black',
-    7: 'red', 8: 'black', 9: 'red', 10: 'black', 11: 'black', 12: 'red',
-    13: 'black', 14: 'red', 15: 'black', 16: 'red', 17: 'black', 18: 'red',
-    19: 'red', 20: 'black', 21: 'red', 22: 'black', 23: 'red', 24: 'black',
-    25: 'red', 26: 'black', 27: 'red', 28: 'black', 29: 'black', 30: 'red',
+    0: 'green', 1: 'red', 2: 'black', 3: 'red', 4: 'black', 5: 'red', 6: 'black', 7: 'red', 8: 'black', 9: 'red', 10: 'black',
+    11: 'black', 12: 'red', 13: 'black', 14: 'red', 15: 'black', 16: 'red', 17: 'black', 18: 'red', 19: 'red', 20: 'black',
+    21: 'red', 22: 'black', 23: 'red', 24: 'black', 25: 'red', 26: 'black', 27: 'red', 28: 'black', 29: 'black', 30: 'red',
     31: 'black', 32: 'red', 33: 'black', 34: 'red', 35: 'black', 36: 'red'
 };
 
-// Live roulette sessions storage
-const liveRouletteSessions = new Map();
+// Active roulette sessions (single-use per /roulette command)
+const rouletteSessions = new Map();
 
-// GIF URLs
+// GIF URL spécifié par l'utilisateur
 const SPINNING_GIF = 'https://images-ext-1.discordapp.net/external/u8-37Lffp-3TZre-_9pbURs23xL1L9wpWWCMZtFAQtc/https/raw.githubusercontent.com/GiorgosLiaskosds20076/RoulettePics/main/spinning_gif.gif';
+
+// Images de résultat avec boule blanche (exemples générés)
+const RESULT_IMAGES = {
+    0: 'attached_assets/generated_images/Roulette_result_number_0_4d73fe42.png',
+    7: 'attached_assets/generated_images/Roulette_result_number_7_e4d0dd16.png',
+    17: 'attached_assets/generated_images/Roulette_result_number_17_4b9041d3.png'
+};
+
+function formatLTC(amount) {
+    return parseFloat(amount.toFixed(8)).toString();
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('roulette')
-        .setDescription('🎰 Start a live roulette session!'),
+        .setDescription('🎰 Start a single-use roulette session with 60s auto-timer!'),
     
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: false });
@@ -33,12 +40,12 @@ module.exports = {
             const userId = interaction.user.id;
             const channelId = interaction.channel.id;
             
-            // Check if there's already a live session in this channel
-            if (liveRouletteSessions.has(channelId)) {
+            // Check if there's already an active session in this channel
+            if (rouletteSessions.has(channelId)) {
                 const errorEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
                     .setTitle('❌ Session Déjà Active')
-                    .setDescription('Une session de roulette live est déjà en cours dans ce canal!')
+                    .setDescription('Une session de roulette est déjà en cours dans ce canal!')
                     .setTimestamp();
                 
                 await interaction.editReply({ embeds: [errorEmbed] });
@@ -58,8 +65,8 @@ module.exports = {
                 return;
             }
             
-            // Start live roulette session
-            await startLiveRouletteSession(interaction);
+            // Start single-use roulette session with auto-timer
+            await startRouletteSession(interaction);
             
         } catch (error) {
             console.error('Erreur roulette:', error);
@@ -75,302 +82,281 @@ module.exports = {
     }
 };
 
-function createBettingEmbed(spin, user) {
+// Start single-use roulette session with automatic 60s timer
+async function startRouletteSession(interaction) {
+    const channelId = interaction.channel.id;
+    const sessionId = Date.now().toString();
+    
+    // Create session with auto-timer
+    const session = {
+        id: sessionId,
+        channelId: channelId,
+        pendingBets: new Map(), // userId -> [{type, details, amount}]
+        expiresAt: Date.now() + 60000, // 60 seconds from now
+        isActive: true,
+        hasSpun: false,
+        timeoutId: null,
+        selectedCategory: null, // Current selected betting category
+        interaction: interaction
+    };
+    
+    rouletteSessions.set(channelId, session);
+    
+    // Create the initial embed with timer
+    const embed = createRouletteEmbed(session);
+    const components = createRouletteComponents(session);
+    
+    await interaction.editReply({ 
+        embeds: [embed], 
+        components: components 
+    });
+    
+    // Start automatic 60s timer
+    startAutoTimer(session);
+    
+    console.log(`🎰 Single-use roulette session started in channel ${channelId} with auto-timer`);
+}
+
+// Create roulette embed
+function createRouletteEmbed(session) {
+    const remainingTime = Math.ceil((session.expiresAt - Date.now()) / 1000);
+    const totalBets = Array.from(session.pendingBets.values()).reduce((sum, bets) => 
+        sum + bets.reduce((betSum, bet) => betSum + bet.amount, 0), 0);
+    
+    let betsDescription = 'Aucun pari placé. Utilisez les contrôles ci-dessous.';
+    if (session.pendingBets.size > 0) {
+        const betsList = [];
+        for (const [userId, bets] of session.pendingBets) {
+            const userTotal = bets.reduce((sum, bet) => sum + bet.amount, 0);
+            betsList.push(`<@${userId}>: ${formatLTC(userTotal)} LTC (${bets.length} paris)`);
+        }
+        betsDescription = betsList.join('\\n');
+    }
+    
     const embed = new EmbedBuilder()
         .setColor('#9932cc')
-        .setTitle('🎰 Roulette - Place Your Bets!')
-        .setDescription(`**Available to bet:** ${formatLTC(spin.bet)} LTC`)
+        .setTitle('🎰 Mont Olympus Casino | Roulette')
+        .setDescription(`**📝 Paris en Cours**\\n\\n${betsDescription}`)
+        .setImage(SPINNING_GIF)
         .addFields(
             {
-                name: '🎯 How to Play',
-                value: '• Choose your betting options below\n• Numbers pay 35:1\n• Colors (Red/Black) pay 1:1\n• Even/Odd pay 1:1\n• High/Low pay 1:1',
+                name: '⏱️ Timer Automatique',
+                value: `Temps restant: **${remainingTime}s** • Total: ${formatLTC(totalBets)} LTC`,
                 inline: false
             },
             {
-                name: '💰 Current Bets',
-                value: spin.bets.size > 0 ? formatBets(spin.bets) : 'No bets placed yet',
+                name: '🎯 Instructions',
+                value: '1. Sélectionnez une catégorie de pari\\n2. Cliquez "Add Bet" pour placer votre mise\\n3. Le timer se remet à 60s à chaque nouveau pari\\n4. La roulette tourne automatiquement à la fin du timer',
                 inline: false
             }
         )
-        .setFooter({ text: 'Select your bets below, then click Spin!' })
         .setTimestamp();
     
     return embed;
 }
 
-function createBettingComponents() {
-    const colorRow = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_red')
-                .setLabel('Red (1:1)')
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('🔴'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_black')
-                .setLabel('Black (1:1)')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('⚫'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_green')
-                .setLabel('Green (35:1)')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🟢')
-        );
+// Create roulette components
+function createRouletteComponents(session) {
+    const isExpired = session.hasSpun || Date.now() >= session.expiresAt;
     
-    const oddEvenRow = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_even')
-                .setLabel('Even (1:1)')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('2️⃣'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_odd')
-                .setLabel('Odd (1:1)')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('1️⃣'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_low')
-                .setLabel('Low 1-18 (1:1)')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('🔽'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_high')
-                .setLabel('High 19-36 (1:1)')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('🔼')
-        );
-    
-    const numberSelect1 = new ActionRowBuilder()
+    // Category selection dropdown
+    const categorySelect = new ActionRowBuilder()
         .addComponents(
             new StringSelectMenuBuilder()
-                .setCustomId('roulette_bet_number_1')
-                .setPlaceholder('Numbers 0-24 (35:1 payout)')
-                .addOptions(
-                    Array.from({ length: 25 }, (_, i) => ({
-                        label: `Number ${i}`,
-                        value: `number_${i}`,
-                        description: `Bet on ${i} (35:1 payout)`,
-                        emoji: i === 0 ? '🟢' : (wheel[i] === 'red' ? '🔴' : '⚫')
-                    }))
-                )
+                .setCustomId('live_roulette_category')
+                .setPlaceholder('Choisissez votre catégorie de pari...')
+                .setDisabled(isExpired)
+                .addOptions([
+                    {
+                        label: 'Number',
+                        value: 'number',
+                        description: 'Pariez sur des numéros spécifiques (35:1)',
+                        emoji: '🎯'
+                    },
+                    {
+                        label: 'Color',
+                        value: 'color',
+                        description: 'Rouge ou Noir (1:1)',
+                        emoji: '🎨'
+                    },
+                    {
+                        label: 'Dozen',
+                        value: 'dozen',
+                        description: '1st12, 2nd12, 3rd12 (2:1)',
+                        emoji: '📊'
+                    },
+                    {
+                        label: 'Column',
+                        value: 'column',
+                        description: '1st, 2nd, 3rd column (2:1)',
+                        emoji: '📋'
+                    },
+                    {
+                        label: 'Even/Odd',
+                        value: 'evenodd',
+                        description: 'Pair ou Impair (1:1)',
+                        emoji: '⚖️'
+                    },
+                    {
+                        label: 'Range',
+                        value: 'range',
+                        description: '1-18 ou 19-36 (1:1)',
+                        emoji: '📏'
+                    }
+                ])
         );
+    
+    // Action buttons (no manual start timer button)
+    const actionButtons = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('live_roulette_add_bet')
+                .setLabel('Add Bet (sélectionnez une catégorie d\'abord)')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(true), // Disabled until category selected
+            new ButtonBuilder()
+                .setCustomId('live_roulette_end_session')
+                .setLabel('Arrêter la Session')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('🛑')
+                .setDisabled(isExpired)
+        );
+    
+    return [categorySelect, actionButtons];
+}
+
+// Start or restart the automatic timer (resets on new bets)
+function startAutoTimer(session) {
+    // Clear existing timer if any
+    if (session.timeoutId) {
+        clearTimeout(session.timeoutId);
+    }
+    
+    // Set new timer for 60 seconds
+    session.expiresAt = Date.now() + 60000;
+    
+    session.timeoutId = setTimeout(async () => {
+        if (rouletteSessions.has(session.channelId) && !session.hasSpun) {
+            // Auto-spin when timer expires
+            if (session.pendingBets.size > 0) {
+                session.hasSpun = true;
+                await performSpin(session);
+            } else {
+                // No bets, end session
+                await endRouletteSession(session.channelId);
+            }
+        }
+    }, 60000);
+    
+    console.log(`⏰ Auto-timer started/reset for channel ${session.channelId}`);
+}
+
+// Perform the spin
+async function performSpin(session) {
+    try {
+        // Generate random result
+        const result = Math.floor(Math.random() * 37);
+        const resultColor = wheel[result];
         
-    const numberSelect2 = new ActionRowBuilder()
-        .addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('roulette_bet_number_2')
-                .setPlaceholder('Numbers 25-36 (35:1 payout)')
-                .addOptions(
-                    Array.from({ length: 12 }, (_, i) => {
-                        const num = i + 25;
-                        return {
-                            label: `Number ${num}`,
-                            value: `number_${num}`,
-                            description: `Bet on ${num} (35:1 payout)`,
-                            emoji: wheel[num] === 'red' ? '🔴' : '⚫'
-                        };
-                    })
-                )
-        );
-    
-    const actionRow = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('roulette_spin')
-                .setLabel('🎰 SPIN!')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('🎰'),
-            new ButtonBuilder()
-                .setCustomId('roulette_clear')
-                .setLabel('Clear Bets')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🗑️'),
-            new ButtonBuilder()
-                .setCustomId('roulette_cancel')
-                .setLabel('Cancel')
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('❌')
-        );
-    
-    // Add dozens and columns betting
-    const dozensRow = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_dozen1')
-                .setLabel('1st Dozen (1-12)')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('1️⃣'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_dozen2')
-                .setLabel('2nd Dozen (13-24)')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('2️⃣'),
-            new ButtonBuilder()
-                .setCustomId('roulette_bet_dozen3')
-                .setLabel('3rd Dozen (25-36)')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('3️⃣')
-        );
-
-    return [colorRow, oddEvenRow, dozensRow, numberSelect1, actionRow];
-}
-
-function formatBets(bets) {
-    let betString = '';
-    let totalBet = 0;
-    
-    for (const [betType, amount] of bets) {
-        betString += `• **${betType}**: ${formatLTC(amount)} LTC\n`;
-        totalBet += amount;
-    }
-    
-    betString += `\n**Total Bet**: ${formatLTC(totalBet)} LTC`;
-    return betString;
-}
-
-// Create modal for specific bet type
-function createBetModal(betType) {
-    const modal = new ModalBuilder()
-        .setCustomId(`live_roulette_modal_${betType}`)
-        .setTitle(`Add ${betType.charAt(0).toUpperCase() + betType.slice(1)} Bet`);
-    
-    let choiceInput, amountInput;
-    
-    if (betType === 'number') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Numéros (séparés par virgule et espace)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex: 7, 12, 19')
-            .setRequired(true);
-    } else if (betType === 'color') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Couleur (red ou black)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('red ou black')
-            .setRequired(true);
-    } else if (betType === 'dozen') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Douzaine (1st12, 2nd12, ou 3rd12)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('1st12, 2nd12, ou 3rd12')
-            .setRequired(true);
-    } else if (betType === 'column') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Colonne (1st column, 2nd column, ou 3rd column)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('1st column, 2nd column, ou 3rd column')
-            .setRequired(true);
-    } else if (betType === 'evenodd') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Pair ou Impair (even ou odd)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('even ou odd')
-            .setRequired(true);
-    } else if (betType === 'range') {
-        choiceInput = new TextInputBuilder()
-            .setCustomId('bet_choice')
-            .setLabel('Range (1-18 ou 19-36)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('1-18 ou 19-36')
-            .setRequired(true);
-    }
-    
-    amountInput = new TextInputBuilder()
-        .setCustomId('bet_amount')
-        .setLabel('Montant en LTC')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 0.01')
-        .setRequired(true);
-    
-    const choiceRow = new ActionRowBuilder().addComponents(choiceInput);
-    const amountRow = new ActionRowBuilder().addComponents(amountInput);
-    
-    modal.addComponents(choiceRow, amountRow);
-    return modal;
-}
-
-// Spin the wheel
-function spinWheel() {
-    return Math.floor(Math.random() * 37);
-}
-
-// Perform the spin with animation
-async function performSpin(interaction, session) {
-    // Calculate total bets and check balances
-    let totalBetAmount = 0;
-    const userBets = new Map();
-    
-    for (const [userId, bets] of session.pendingBets) {
-        let userTotal = 0;
-        for (const bet of bets) {
-            userTotal += bet.amount;
-        }
-        userBets.set(userId, userTotal);
-        totalBetAmount += userTotal;
-    }
-    
-    // Deduct bets from user balances and add wagered amounts
-    for (const [userId, amount] of userBets) {
-        const profile = userProfiles.getUserProfile(userId);
-        userProfiles.updateUserProfile(userId, { 
-            balance: profile.balance - amount 
+        // Show spinning animation first
+        const spinningEmbed = new EmbedBuilder()
+            .setColor('#ffaa00')
+            .setTitle('🎰 La Roulette Tourne...')
+            .setDescription('La bille roule sur la roulette...')
+            .setImage(SPINNING_GIF)
+            .setTimestamp();
+        
+        await session.interaction.editReply({ 
+            embeds: [spinningEmbed], 
+            components: [] 
         });
-        securityManager.addWageredAmount(userId, amount);
-    }
-    
-    // Show spinning animation
-    const spinningEmbed = new EmbedBuilder()
-        .setColor('#ff6600')
-        .setTitle('Mont Olympus Casino | Roulette')
-        .setDescription('🌀 **LA ROULETTE TOURNE!** 🌀')
-        .setImage(SPINNING_GIF)
-        .addFields(
-            { name: '🎲 Statut', value: 'La bille tourne...', inline: false }
-        )
-        .setTimestamp();
-    
-    await interaction.editReply({ embeds: [spinningEmbed], components: [] });
-    
-    // Wait for animation
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Generate result
-    const result = spinWheel();
-    
-    // Calculate payouts for all users
-    let totalPayouts = 0;
-    const allWinnings = new Map();
-    
-    for (const [userId, bets] of session.pendingBets) {
-        const { totalPayout, winningBets } = calculatePayout(bets, result);
-        if (totalPayout > 0) {
-            allWinnings.set(userId, { totalPayout, winningBets });
-            totalPayouts += totalPayout;
+        
+        // Wait 3 seconds for animation
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // Calculate all winnings
+        const allWinnings = new Map();
+        let totalBetAmount = 0;
+        
+        for (const [userId, bets] of session.pendingBets) {
+            let userTotalPayout = 0;
+            let userBetAmount = 0;
             
-            // Update user balance with winnings
-            const profile = userProfiles.getUserProfile(userId);
-            userProfiles.updateUserProfile(userId, { 
-                balance: profile.balance + totalPayout 
-            });
+            for (const bet of bets) {
+                userBetAmount += bet.amount;
+                totalBetAmount += bet.amount;
+                
+                const payout = calculatePayout(bet, result);
+                if (payout > 0) {
+                    userTotalPayout += payout;
+                }
+            }
+            
+            if (userTotalPayout > 0) {
+                // Update user balance
+                const profile = userProfiles.getUserProfile(userId);
+                userProfiles.updateUserProfile(userId, { 
+                    balance: profile.balance + userTotalPayout 
+                });
+                
+                allWinnings.set(userId, { totalPayout: userTotalPayout });
+            }
         }
+        
+        // Show final result
+        await showFinalResult(session, result, allWinnings, totalBetAmount);
+        
+        // End session
+        await endRouletteSession(session.channelId);
+        
+    } catch (error) {
+        console.error('Erreur lors du spin:', error);
     }
+}
+
+// Calculate bet payout
+function calculatePayout(bet, result) {
+    const { type, details, amount } = bet;
     
-    // Show final result
-    await showFinalResult(interaction, result, session, allWinnings, totalBetAmount);
-    
-    // Clean up session
-    liveRouletteSessions.delete(session.channelId);
+    switch (type) {
+        case 'number':
+            const numbers = details.split(',').map(n => parseInt(n.trim()));
+            return numbers.includes(result) ? amount * 35 : 0;
+            
+        case 'color':
+            if (result === 0) return 0; // Green doesn't win on color bets
+            return wheel[result] === details ? amount * 1 : 0;
+            
+        case 'dozen':
+            let dozenRange;
+            if (details === '1st12') dozenRange = [1, 12];
+            else if (details === '2nd12') dozenRange = [13, 24];
+            else if (details === '3rd12') dozenRange = [25, 36];
+            return (result >= dozenRange[0] && result <= dozenRange[1]) ? amount * 2 : 0;
+            
+        case 'column':
+            let columnNumbers;
+            if (details === '1st column') columnNumbers = [1,4,7,10,13,16,19,22,25,28,31,34];
+            else if (details === '2nd column') columnNumbers = [2,5,8,11,14,17,20,23,26,29,32,35];
+            else if (details === '3rd column') columnNumbers = [3,6,9,12,15,18,21,24,27,30,33,36];
+            return columnNumbers.includes(result) ? amount * 2 : 0;
+            
+        case 'evenodd':
+            if (result === 0) return 0;
+            const isEven = result % 2 === 0;
+            return ((details === 'even' && isEven) || (details === 'odd' && !isEven)) ? amount * 1 : 0;
+            
+        case 'range':
+            if (result === 0) return 0;
+            return ((details === '1-18' && result <= 18) || (details === '19-36' && result >= 19)) ? amount * 1 : 0;
+            
+        default:
+            return 0;
+    }
 }
 
 // Show final result with winning number and image
-async function showFinalResult(interaction, result, session, allWinnings, totalBetAmount) {
+async function showFinalResult(session, result, allWinnings, totalBetAmount) {
     const resultColor = wheel[result];
     const colorEmoji = resultColor === 'red' ? '🔴' : resultColor === 'black' ? '⚫' : '🟢';
     
@@ -383,18 +369,21 @@ async function showFinalResult(interaction, result, session, allWinnings, totalB
     if (totalWinnings > 0) {
         title = '🎉 FÉLICITATIONS ! Il y a des gagnants !';
         color = '#00ff00';
-        description += `\n\n💰 **Gains totaux distribués: ${formatLTC(totalWinnings)} LTC**`;
+        description += `\\n\\n💰 **Gains totaux distribués: ${formatLTC(totalWinnings)} LTC**`;
     } else {
         title = '💸 La Maison Gagne';
         color = '#ff0000';
-        description += `\n\n💔 **Perdu: ${formatLTC(totalBetAmount)} LTC**`;
+        description += `\\n\\n💔 **Perdu: ${formatLTC(totalBetAmount)} LTC**`;
     }
+    
+    // Use specific result image if available, otherwise use spinning gif
+    const resultImage = RESULT_IMAGES[result] || SPINNING_GIF;
     
     const embed = new EmbedBuilder()
         .setColor(color)
         .setTitle(title)
         .setDescription(description)
-        .setImage(TABLE_IMAGE) // This should show the roulette table with a white dot on the winning number
+        .setImage(resultImage) // Shows result with white ball on winning number
         .addFields(
             {
                 name: '🎯 Numéro Gagnant',
@@ -408,8 +397,8 @@ async function showFinalResult(interaction, result, session, allWinnings, totalB
     if (allWinnings.size > 0) {
         let winnersText = '';
         for (const [userId, data] of allWinnings) {
-            const user = await interaction.client.users.fetch(userId);
-            winnersText += `• **${user.username}**: ${formatLTC(data.totalPayout)} LTC\n`;
+            const user = await session.interaction.client.users.fetch(userId);
+            winnersText += `• **${user.username}**: ${formatLTC(data.totalPayout)} LTC\\n`;
         }
         embed.addFields({
             name: '🏆 Gagnants',
@@ -418,15 +407,15 @@ async function showFinalResult(interaction, result, session, allWinnings, totalB
         });
     }
     
-    await interaction.editReply({ embeds: [embed], components: [] });
+    await session.interaction.editReply({ embeds: [embed], components: [] });
     
     // Log the game for each participant
     for (const [userId, bets] of session.pendingBets) {
-        const user = await interaction.client.users.fetch(userId);
+        const user = await session.interaction.client.users.fetch(userId);
         const userBetAmount = bets.reduce((sum, bet) => sum + bet.amount, 0);
         const userWinnings = allWinnings.get(userId)?.totalPayout || 0;
         
-        await logManager.sendGamblingLog(interaction.client, interaction.guild.id, {
+        await logManager.sendGamblingLog(session.interaction.client, session.interaction.guild.id, {
             type: 'roulette',
             user: user,
             game: 'roulette',
@@ -438,253 +427,41 @@ async function showFinalResult(interaction, result, session, allWinnings, totalB
     }
 }
 
-function calculatePayout(bets, result) {
-    let totalPayout = 0;
-    const winningBets = [];
+// End roulette session
+async function endRouletteSession(channelId) {
+    const session = rouletteSessions.get(channelId);
+    if (!session) return;
     
-    for (const bet of bets) {
-        let won = false;
-        let multiplier = 0;
-        
-        if (bet.type === 'number') {
-            // Check if any of the numbers won
-            if (bet.details.includes(result)) {
-                won = true;
-                multiplier = 35;
+    // Clear timer if active
+    if (session.timeoutId) {
+        clearTimeout(session.timeoutId);
+    }
+    
+    // Refund any pending bets if session ended without spinning
+    if (!session.hasSpun && session.pendingBets.size > 0) {
+        for (const [userId, userBets] of session.pendingBets) {
+            let totalRefund = 0;
+            for (const bet of userBets) {
+                totalRefund += bet.amount;
             }
-        } else if (bet.type === 'color') {
-            if ((bet.details === 'red' && wheel[result] === 'red') ||
-                (bet.details === 'black' && wheel[result] === 'black')) {
-                won = true;
-                multiplier = 1;
+            
+            if (totalRefund > 0) {
+                const profile = userProfiles.getUserProfile(userId);
+                userProfiles.updateUserProfile(userId, { 
+                    balance: profile.balance + totalRefund 
+                });
             }
-        } else if (bet.type === 'dozen') {
-            if ((bet.details === '1st12' && result >= 1 && result <= 12) ||
-                (bet.details === '2nd12' && result >= 13 && result <= 24) ||
-                (bet.details === '3rd12' && result >= 25 && result <= 36)) {
-                won = true;
-                multiplier = 2;
-            }
-        } else if (bet.type === 'column') {
-            // Column logic: 1st column (1,4,7,10,13,16,19,22,25,28,31,34)
-            // 2nd column (2,5,8,11,14,17,20,23,26,29,32,35)
-            // 3rd column (3,6,9,12,15,18,21,24,27,30,33,36)
-            if (result > 0) {
-                const column = ((result - 1) % 3) + 1;
-                if ((bet.details === '1st column' && column === 1) ||
-                    (bet.details === '2nd column' && column === 2) ||
-                    (bet.details === '3rd column' && column === 3)) {
-                    won = true;
-                    multiplier = 2;
-                }
-            }
-        } else if (bet.type === 'evenodd') {
-            if (result > 0) {
-                if ((bet.details === 'even' && result % 2 === 0) ||
-                    (bet.details === 'odd' && result % 2 === 1)) {
-                    won = true;
-                    multiplier = 1;
-                }
-            }
-        } else if (bet.type === 'range') {
-            if ((bet.details === '1-18' && result >= 1 && result <= 18) ||
-                (bet.details === '19-36' && result >= 19 && result <= 36)) {
-                won = true;
-                multiplier = 1;
-            }
-        }
-        
-        if (won) {
-            const payout = bet.amount * (multiplier + 1);
-            totalPayout += payout;
-            winningBets.push({ ...bet, payout, multiplier });
         }
     }
     
-    return { totalPayout, winningBets };
+    rouletteSessions.delete(channelId);
+    console.log(`🎰 Single-use roulette session ended in channel ${channelId}`);
 }
 
-// End live roulette session
-async function endLiveRouletteSession(channelId, client) {
-    const session = liveRouletteSessions.get(channelId);
-    if (!session || !session.isActive) return;
-    
-    session.isActive = false;
-    
-    // Refund all pending bets
-    for (const [userId, userBets] of session.pendingBets) {
-        let totalRefund = 0;
-        for (const bet of userBets) {
-            totalRefund += bet.amount;
-        }
-        
-        if (totalRefund > 0) {
-            const profile = userProfiles.getUserProfile(userId);
-            userProfiles.updateUserProfile(userId, { 
-                balance: profile.balance + totalRefund 
-            });
-        }
-    }
-    
-    liveRouletteSessions.delete(channelId);
-    console.log(`🎰 Live roulette session ended in channel ${channelId}`);
-}
-
-// Start Live Roulette Session with proper dropdown flow
-async function startLiveRouletteSession(interaction) {
-    const channelId = interaction.channel.id;
-    
-    try {
-        // Create the main roulette interface with dropdown
-        const mainEmbed = new EmbedBuilder()
-            .setColor('#9932cc')
-            .setTitle('🎰 Live Roulette Session Started!')
-            .setDescription('Welcome to Live Roulette! Choose your betting category from the dropdown menu below.')
-            .addFields(
-                {
-                    name: '🎯 How to Play',
-                    value: '1️⃣ Select a betting category from the dropdown\n2️⃣ Click "Add Bet" to place your wager\n3️⃣ Fill in the bet details in the modal\n4️⃣ Wait for the 60-second timer to complete\n5️⃣ Watch the wheel spin and see if you win!',
-                    inline: false
-                },
-                {
-                    name: '💰 Betting Options',
-                    value: '• **Numbers (0-36)**: 35:1 payout\n• **Colors (Red/Black)**: 1:1 payout\n• **Even/Odd**: 1:1 payout\n• **High/Low (1-18/19-36)**: 1:1 payout\n• **Dozens (1-12, 13-24, 25-36)**: 2:1 payout',
-                    inline: false
-                },
-                {
-                    name: '⚠️ Important',
-                    value: '• Minimum bet: 0.001 LTC\n• Betting closes after 60 seconds\n• You must have a password set to play',
-                    inline: false
-                }
-            )
-            .setImage(TABLE_IMAGE)
-            .setFooter({ text: 'Live Roulette • Select category and place your bets' })
-            .setTimestamp();
-        
-        // Create dropdown for betting categories
-        const categorySelect = new ActionRowBuilder()
-            .addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('live_roulette_category')
-                    .setPlaceholder('Choose your betting category...')
-                    .addOptions([
-                        {
-                            label: 'Single Numbers (0-36)',
-                            description: 'Bet on a specific number - 35:1 payout',
-                            value: 'number',
-                            emoji: '🎲'
-                        },
-                        {
-                            label: 'Colors (Red/Black)',
-                            description: 'Bet on red or black - 1:1 payout',
-                            value: 'color',
-                            emoji: '🎨'
-                        },
-                        {
-                            label: 'Even/Odd',
-                            description: 'Bet on even or odd numbers - 1:1 payout',
-                            value: 'evenodd',
-                            emoji: '⚖️'
-                        },
-                        {
-                            label: 'High/Low (1-18/19-36)',
-                            description: 'Bet on number ranges - 1:1 payout',
-                            value: 'range',
-                            emoji: '📊'
-                        },
-                        {
-                            label: 'Dozens (1-12, 13-24, 25-36)',
-                            description: 'Bet on number groups - 2:1 payout',
-                            value: 'dozen',
-                            emoji: '🔢'
-                        }
-                    ])
-            );
-        
-        // Control buttons
-        const controlButtons = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('live_roulette_add_bet')
-                    .setLabel('Add Bet')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('💰'),
-                new ButtonBuilder()
-                    .setCustomId('live_roulette_view_bets')
-                    .setLabel('View My Bets')
-                    .setStyle(ButtonStyle.Primary)
-                    .setEmoji('📋'),
-                new ButtonBuilder()
-                    .setCustomId('live_roulette_start_timer')
-                    .setLabel('Start 60s Timer')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('⏰'),
-                new ButtonBuilder()
-                    .setCustomId('live_roulette_end_session')
-                    .setLabel('End Session')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('❌')
-            );
-        
-        // Send the main interface
-        const message = await interaction.editReply({
-            embeds: [mainEmbed],
-            components: [categorySelect, controlButtons]
-        });
-        
-        // Start the live roulette system using the LiveRoulette class
-        const LiveRoulette = require('../utils/liveRoulette.js');
-        const client = interaction.client;
-        
-        // Get or create the live roulette instance
-        let liveRouletteInstance = client.liveRoulette;
-        if (!liveRouletteInstance) {
-            liveRouletteInstance = new LiveRoulette(client);
-            client.liveRoulette = liveRouletteInstance;
-        }
-        
-        // Update the timer to 60 seconds and start the session
-        liveRouletteInstance.timeLeft = 60;
-        liveRouletteInstance.currentMessage = message;
-        
-        // Store session data in the old format for compatibility
-        liveRouletteSessions.set(channelId, {
-            isActive: true,
-            startTime: Date.now(),
-            pendingBets: new Map(),
-            host: interaction.user.id,
-            message: message,
-            bettingOpen: true
-        });
-        
-        console.log(`🎰 Live roulette session started in channel ${channelId} by ${interaction.user.username}`);
-        
-        // Log session start
-        const logManager = require('../utils/logManager.js');
-        await logManager.sendGamblingLog(client, interaction.guild.id, {
-            type: 'session_started',
-            user: interaction.user,
-            game: 'Live Roulette',
-            channel: interaction.channel.name
-        });
-        
-    } catch (error) {
-        console.error('Error starting live roulette session:', error);
-        
-        const errorEmbed = new EmbedBuilder()
-            .setColor('#ff0000')
-            .setTitle('❌ Session Failed')
-            .setDescription('Failed to start live roulette session. Please try again.')
-            .setTimestamp();
-        
-        await interaction.editReply({ embeds: [errorEmbed] });
-    }
-}
-
-// Export session map and functions for button handlers
-module.exports.liveRouletteSessions = liveRouletteSessions;
-module.exports.createBetModal = createBetModal;
+// Export functions for use in discord-bot.js
+module.exports.rouletteSessions = rouletteSessions;
+module.exports.startAutoTimer = startAutoTimer;
 module.exports.performSpin = performSpin;
-module.exports.endLiveRouletteSession = endLiveRouletteSession;
-module.exports.startLiveRouletteSession = startLiveRouletteSession;
-
+module.exports.endRouletteSession = endRouletteSession;
+module.exports.createRouletteEmbed = createRouletteEmbed;
+module.exports.createRouletteComponents = createRouletteComponents;
