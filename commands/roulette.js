@@ -21,27 +21,98 @@ const activeSpins = new Map();
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('roulette')
-        .setDescription('Play Roulette - place your bets!')
+        .setDescription('🎰 Play Roulette - place your bets!')
         .addNumberOption(option =>
             option.setName('bet')
                 .setDescription('Amount to bet in LTC')
                 .setRequired(true)
                 .setMinValue(0.001)
+        )
+        .addStringOption(option =>
+            option.setName('couleur')
+                .setDescription('Bet on color: rouge or noir')
+                .addChoices(
+                    { name: '🔴 Rouge (Red)', value: 'red' },
+                    { name: '⚫ Noir (Black)', value: 'black' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('numeros')
+                .setDescription('Numbers to bet on (1-36, separated by spaces)')
+        )
+        .addStringOption(option =>
+            option.setName('range')
+                .setDescription('Number range to bet on')
+                .addChoices(
+                    { name: '1-18 (Low)', value: 'low' },
+                    { name: '19-36 (High)', value: 'high' }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('colonne')
+                .setDescription('Column to bet on')
+                .addChoices(
+                    { name: '1-12 (First Column)', value: 'col1' },
+                    { name: '13-24 (Second Column)', value: 'col2' },
+                    { name: '25-36 (Third Column)', value: 'col3' }
+                )
         ),
     
     async execute(interaction) {
-        // Check if interaction is too old
-        const interactionAge = Date.now() - interaction.createdTimestamp;
-        if (interactionAge > 10 * 60 * 1000) {
-            console.log('Interaction too old, ignored');
-            return;
-        }
-        
         await interaction.deferReply({ ephemeral: false });
         
         try {
             const bet = interaction.options.getNumber('bet');
+            const couleur = interaction.options.getString('couleur');
+            const numerosStr = interaction.options.getString('numeros');
+            const range = interaction.options.getString('range');
+            const colonne = interaction.options.getString('colonne');
             const userId = interaction.user.id;
+            
+            // Validate that at least one betting option is provided
+            if (!couleur && !numerosStr && !range && !colonne) {
+                const errorEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Aucun Pari Sélectionné')
+                    .setDescription('Vous devez sélectionner au moins une option de pari :')
+                    .addFields(
+                        { name: '🎯 Options Disponibles', value: '• **Couleur**: Rouge ou Noir\n• **Numéros**: 1-36 (séparés par des espaces)\n• **Range**: 1-18 ou 19-36\n• **Colonne**: 1-12, 13-24 ou 25-36', inline: false }
+                    )
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [errorEmbed] });
+                return;
+            }
+            
+            // Parse and validate numbers
+            let numbers = [];
+            if (numerosStr) {
+                const numArray = numerosStr.split(' ').map(n => parseInt(n.trim())).filter(n => !isNaN(n));
+                const invalidNums = numArray.filter(n => n < 1 || n > 36);
+                if (invalidNums.length > 0) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('❌ Numéros Invalides')
+                        .setDescription(`Les numéros doivent être entre 1 et 36. Numéros invalides: ${invalidNums.join(', ')}`)
+                        .setTimestamp();
+                    
+                    await interaction.editReply({ embeds: [errorEmbed] });
+                    return;
+                }
+                numbers = [...new Set(numArray)]; // Remove duplicates
+            }
+            
+            // Validate conflicting bets
+            if (couleur && (couleur === 'red' && couleur === 'black')) {
+                const errorEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Paris Conflictuels')
+                    .setDescription('Vous ne pouvez pas parier sur rouge ET noir en même temps.')
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [errorEmbed] });
+                return;
+            }
             
             // Check if user has active spin
             if (activeSpins.has(userId)) {
@@ -58,11 +129,34 @@ module.exports = {
             // Get user profile and verify balance
             const profile = userProfiles.getUserProfile(userId);
             
-            if (profile.balance < bet) {
+            // Calculate total bet amount
+            let totalBetAmount = 0;
+            const bets = new Map();
+            
+            if (couleur) {
+                bets.set(couleur, bet);
+                totalBetAmount += bet;
+            }
+            if (numbers.length > 0) {
+                numbers.forEach(num => {
+                    bets.set(`number_${num}`, bet);
+                    totalBetAmount += bet;
+                });
+            }
+            if (range) {
+                bets.set(range, bet);
+                totalBetAmount += bet;
+            }
+            if (colonne) {
+                bets.set(colonne, bet);
+                totalBetAmount += bet;
+            }
+            
+            if (profile.balance < totalBetAmount) {
                 const errorEmbed = new EmbedBuilder()
                     .setColor('#ff0000')
-                    .setTitle('❌ Insufficient Balance')
-                    .setDescription(`You need **${formatLTC(bet)} LTC** to play but only have **${formatLTC(profile.balance)} LTC**.`)
+                    .setTitle('❌ Solde Insuffisant')
+                    .setDescription(`Vous avez besoin de **${formatLTC(totalBetAmount)} LTC** pour tous vos paris mais vous n'avez que **${formatLTC(profile.balance)} LTC**.`)
                     .setTimestamp();
                 
                 await interaction.editReply({ embeds: [errorEmbed] });
@@ -74,47 +168,24 @@ module.exports = {
             if (!userSec.hasPassword) {
                 const errorEmbed = new EmbedBuilder()
                     .setColor('#ffaa00')
-                    .setTitle('🔒 Password Required')
-                    .setDescription('You need to set a password before gambling. Use `/setpassword` first.')
+                    .setTitle('🔒 Mot de Passe Requis')
+                    .setDescription('Vous devez définir un mot de passe avant de jouer. Utilisez `/setpassword` d\'abord.')
                     .setTimestamp();
                 
                 await interaction.editReply({ embeds: [errorEmbed] });
                 return;
             }
             
-            // Create new spin
-            const spin = {
-                userId: userId,
-                bet: bet,
-                bets: new Map(),
-                status: 'betting',
-                result: null,
-                totalPayout: 0,
-                startTime: Date.now()
-            };
-            
-            activeSpins.set(userId, spin);
-            
-            // Show betting interface
-            const bettingEmbed = createBettingEmbed(spin, interaction.user);
-            const bettingComponents = createBettingComponents();
-            
-            await interaction.editReply({ 
-                embeds: [bettingEmbed],
-                components: bettingComponents
+            // Deduct bet from balance
+            userProfiles.updateUserProfile(userId, { 
+                balance: profile.balance - totalBetAmount 
             });
             
-            // Auto-timeout after 2 minutes
-            setTimeout(() => {
-                if (activeSpins.has(userId)) {
-                    const timeoutSpin = activeSpins.get(userId);
-                    if (timeoutSpin.status === 'betting') {
-                        timeoutSpin.status = 'timeout';
-                        activeSpins.delete(userId);
-                        console.log(`🕐 Roulette spin timed out for ${interaction.user.username}`);
-                    }
-                }
-            }, 120000);
+            // Add wagered amount
+            securityManager.addWageredAmount(userId, totalBetAmount);
+            
+            // Show spinning animation
+            await showSpinningAnimation(interaction, bets, totalBetAmount);
             
         } catch (error) {
             console.error('Erreur roulette:', error);
@@ -289,6 +360,101 @@ function spinWheel() {
     return Math.floor(Math.random() * 37);
 }
 
+// Spinning animation function
+async function showSpinningAnimation(interaction, bets, totalBetAmount) {
+    const user = interaction.user;
+    
+    // Step 1: Show betting summary
+    const bettingEmbed = new EmbedBuilder()
+        .setColor('#9932cc')
+        .setTitle('🎰 Roulette - Paris Confirmés!')
+        .setDescription(formatBetsDisplay(bets))
+        .addFields(
+            { name: '💰 Mise Totale', value: `${formatLTC(totalBetAmount)} LTC`, inline: true },
+            { name: '🎯 Statut', value: 'Préparation du spin...', inline: true }
+        )
+        .setTimestamp();
+    
+    await interaction.editReply({ embeds: [bettingEmbed] });
+    
+    // Step 2: Spinning animation phases
+    const spinningEmbed = new EmbedBuilder()
+        .setColor('#ff6600')
+        .setTitle('🎰 La Roulette Tourne!')
+        .setDescription('🌀 **SPIN EN COURS** 🌀')
+        .setImage('https://media.giphy.com/media/3oriO13KTkzPwTykp2/giphy.gif')
+        .addFields(
+            { name: '🎲 Animation', value: 'La bille tourne autour de la roulette...', inline: false }
+        )
+        .setTimestamp();
+    
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await interaction.editReply({ embeds: [spinningEmbed] });
+    
+    // Step 3: Show slowing down
+    const slowingEmbed = new EmbedBuilder()
+        .setColor('#ff9900')
+        .setTitle('🎰 La Bille Ralentit!')
+        .setDescription('⏳ **PRESQUE FINI** ⏳')
+        .setImage('https://media.giphy.com/media/l0ErFafpUCQTQFMSk/giphy.gif')
+        .addFields(
+            { name: '🎯 Statut', value: 'La bille va bientôt s\'arrêter...', inline: false }
+        )
+        .setTimestamp();
+    
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await interaction.editReply({ embeds: [slowingEmbed] });
+    
+    // Step 4: Generate result and show final result
+    const result = spinWheel();
+    const { totalPayout, winningBets } = calculatePayout(bets, result);
+    
+    // Update user balance with winnings
+    if (totalPayout > 0) {
+        const profile = userProfiles.getUserProfile(user.id);
+        userProfiles.updateUserProfile(user.id, { 
+            balance: profile.balance + totalPayout 
+        });
+    }
+    
+    // Log the game
+    await logManager.sendGamblingLog(interaction.client, interaction.guild.id, {
+        type: 'roulette',
+        user: user,
+        game: 'roulette',
+        bet: totalBetAmount,
+        result: totalPayout > 0 ? 'win' : 'lose',
+        payout: totalPayout,
+        details: `Résultat: ${result} ${wheel[result] === 'red' ? '🔴' : wheel[result] === 'black' ? '⚫' : '🟢'}, Paris: ${Array.from(bets.keys()).join(', ')}`
+    });
+    
+    // Create final result embed
+    const finalResultEmbed = createAnimatedResultEmbed(bets, result, totalPayout, winningBets, user, totalBetAmount);
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await interaction.editReply({ embeds: [finalResultEmbed] });
+}
+
+function formatBetsDisplay(bets) {
+    let display = '**Vos Paris:**\n';
+    for (const [betType, amount] of bets) {
+        let betName = betType;
+        if (betType === 'red') betName = '🔴 Rouge';
+        else if (betType === 'black') betName = '⚫ Noir';
+        else if (betType === 'low') betName = '🔽 1-18';
+        else if (betType === 'high') betName = '🔼 19-36';
+        else if (betType === 'col1') betName = '📊 Colonne 1-12';
+        else if (betType === 'col2') betName = '📊 Colonne 13-24';
+        else if (betType === 'col3') betName = '📊 Colonne 25-36';
+        else if (betType.startsWith('number_')) {
+            const num = betType.split('_')[1];
+            betName = `🎯 Numéro ${num}`;
+        }
+        display += `• **${betName}**: ${formatLTC(amount)} LTC\n`;
+    }
+    return display;
+}
+
 function calculatePayout(bets, result) {
     let totalPayout = 0;
     const winningBets = [];
@@ -309,21 +475,21 @@ function calculatePayout(bets, result) {
         } else if (betType === 'black' && wheel[result] === 'black') {
             won = true;
             multiplier = 1;
-        } else if (betType === 'green' && wheel[result] === 'green') {
-            won = true;
-            multiplier = 35;
-        } else if (betType === 'even' && result !== 0 && result % 2 === 0) {
-            won = true;
-            multiplier = 1;
-        } else if (betType === 'odd' && result % 2 === 1) {
-            won = true;
-            multiplier = 1;
         } else if (betType === 'low' && result >= 1 && result <= 18) {
             won = true;
             multiplier = 1;
         } else if (betType === 'high' && result >= 19 && result <= 36) {
             won = true;
             multiplier = 1;
+        } else if (betType === 'col1' && result >= 1 && result <= 12) {
+            won = true;
+            multiplier = 2; // 2:1 payout for columns
+        } else if (betType === 'col2' && result >= 13 && result <= 24) {
+            won = true;
+            multiplier = 2;
+        } else if (betType === 'col3' && result >= 25 && result <= 36) {
+            won = true;
+            multiplier = 2;
         }
         
         if (won) {
@@ -334,6 +500,77 @@ function calculatePayout(bets, result) {
     }
     
     return { totalPayout, winningBets };
+}
+
+function createAnimatedResultEmbed(bets, result, totalPayout, winningBets, user, totalBetAmount) {
+    const resultColor = wheel[result];
+    const colorEmoji = resultColor === 'red' ? '🔴' : resultColor === 'black' ? '⚫' : '🟢';
+    
+    let title = '🎰 Résultat de la Roulette';
+    let color = '#9932cc';
+    let description = `🎯 **La bille s'est arrêtée sur le ${result}** ${colorEmoji}`;
+    
+    if (totalPayout > 0) {
+        title = '🎉 FÉLICITATIONS ! Vous avez gagné !';
+        color = '#00ff00';
+        description += `\n\n💰 **Gains totaux: ${formatLTC(totalPayout)} LTC**`;
+    } else {
+        title = '💸 La Maison Gagne';
+        color = '#ff0000';
+        description += `\n\n💔 **Perdu: ${formatLTC(totalBetAmount)} LTC**`;
+    }
+    
+    const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle(title)
+        .setDescription(description)
+        .addFields(
+            {
+                name: '🎯 Numéro Gagnant',
+                value: `**${result}** ${colorEmoji} (${resultColor === 'red' ? 'Rouge' : resultColor === 'black' ? 'Noir' : 'Vert'})`,
+                inline: true
+            }
+        );
+    
+    // Add winning bets details
+    if (winningBets.length > 0) {
+        const winningBetsStr = winningBets.map(bet => {
+            let betName = bet.betType;
+            if (bet.betType === 'red') betName = '🔴 Rouge';
+            else if (bet.betType === 'black') betName = '⚫ Noir';
+            else if (bet.betType === 'low') betName = '🔽 1-18';
+            else if (bet.betType === 'high') betName = '🔼 19-36';
+            else if (bet.betType === 'col1') betName = '📊 Colonne 1-12';
+            else if (bet.betType === 'col2') betName = '📊 Colonne 13-24';
+            else if (bet.betType === 'col3') betName = '📊 Colonne 25-36';
+            else if (bet.betType.startsWith('number_')) {
+                const num = bet.betType.split('_')[1];
+                betName = `🎯 Numéro ${num}`;
+            }
+            return `• **${betName}**: ${formatLTC(bet.amount)} LTC → ${formatLTC(bet.payout)} LTC (${bet.multiplier + 1}x)`;
+        }).join('\n');
+        
+        embed.addFields({
+            name: '🏆 Paris Gagnants',
+            value: winningBetsStr,
+            inline: false
+        });
+    }
+    
+    // Add balance info
+    const profile = userProfiles.getUserProfile(user.id);
+    embed.addFields({
+        name: '💰 Nouveau Solde',
+        value: `${formatLTC(profile.balance)} LTC`,
+        inline: true
+    });
+    
+    // Add big win gif for significant wins
+    if (totalPayout > totalBetAmount * 10) {
+        embed.setImage('https://media.giphy.com/media/g9582DNuQppxC/giphy.gif');
+    }
+    
+    return embed;
 }
 
 function createResultEmbed(spin, result, payout, winningBets, user) {
