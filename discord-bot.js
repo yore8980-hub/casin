@@ -149,7 +149,21 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             // Live roulette buttons
             else if (interaction.customId.startsWith('live_roulette_')) {
-                await handleLiveRouletteBet(interaction);
+                if (interaction.customId === 'live_roulette_add_bet') {
+                    await handleLiveRouletteAddBet(interaction);
+                } else if (interaction.customId === 'live_roulette_view_bets') {
+                    await handleLiveRouletteViewBets(interaction);
+                } else if (interaction.customId === 'live_roulette_start_timer') {
+                    await handleLiveRouletteStartTimer(interaction);
+                } else if (interaction.customId === 'live_roulette_end_session') {
+                    await handleLiveRouletteEndSession(interaction);
+                } else if (interaction.customId.includes('modal_')) {
+                    // Handle modal button types (red, black, odd, even, etc.)
+                    await handleLiveRouletteBet(interaction);
+                } else {
+                    // Handle other live roulette bet buttons
+                    await handleLiveRouletteBet(interaction);
+                }
             }
             // Coinflip progression buttons
             else if (interaction.customId.startsWith('coinflip_double_')) {
@@ -182,8 +196,12 @@ client.on(Events.InteractionCreate, async interaction => {
     // Handle select menu interactions
     if (interaction.isStringSelectMenu()) {
         try {
-            // Roulette number selection
-            if (interaction.customId === 'roulette_bet_number') {
+            // Live roulette category selection
+            if (interaction.customId === 'live_roulette_category') {
+                await handleLiveRouletteCategorySelection(interaction);
+            }
+            // Roulette number selection (legacy)
+            else if (interaction.customId === 'roulette_bet_number') {
                 await handleRouletteNumberBet(interaction);
             }
         } catch (error) {
@@ -193,6 +211,29 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setColor('#ff0000')
                 .setTitle('❌ Error')
                 .setDescription('There was an error processing your selection!')
+                .setTimestamp();
+            
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+            } else {
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+            }
+        }
+    }
+    
+    // Handle modal submissions
+    if (interaction.isModalSubmit()) {
+        try {
+            if (interaction.customId.startsWith('live_roulette_modal_')) {
+                await handleLiveRouletteModalSubmission(interaction);
+            }
+        } catch (error) {
+            console.error('❌ Modal interaction error:', error);
+            
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Erreur')
+                .setDescription('Une erreur est survenue lors du traitement de votre pari.')
                 .setTimestamp();
             
             if (interaction.replied || interaction.deferred) {
@@ -1453,6 +1494,204 @@ function startLiveRouletteIfConfigured() {
     }
 }
 
+// Live roulette interaction handlers
+async function handleLiveRouletteBet(interaction) {
+    const rouletteModule = require('./commands/roulette.js');
+    const { liveRouletteSessions } = rouletteModule;
+    
+    if (interaction.customId === 'live_roulette_add_bet') {
+        // Check if a category is selected first
+        await interaction.deferReply({ ephemeral: true });
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Catégorie Requise')
+            .setDescription('Veuillez d\'abord sélectionner une catégorie de pari dans le menu déroulant.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    } else if (interaction.customId === 'live_roulette_spin') {
+        await interaction.deferReply({ ephemeral: false });
+        
+        const session = liveRouletteSessions.get(interaction.channel.id);
+        if (!session || !session.isActive) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Session Expirée')
+                .setDescription('Aucune session de roulette active dans ce canal.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        if (session.pendingBets.size === 0) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Aucun Pari')
+                .setDescription('Aucun pari n\'a été placé pour cette session.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Start the spin
+        session.hasSpun = true;
+        await rouletteModule.performSpin(interaction, session);
+    } else if (interaction.customId === 'live_roulette_stop') {
+        await interaction.deferReply({ ephemeral: false });
+        
+        const session = liveRouletteSessions.get(interaction.channel.id);
+        if (session) {
+            await rouletteModule.endLiveRouletteSession(interaction.channel.id, interaction.client);
+        }
+        
+        const stopEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('🛑 Session Arrêtée')
+            .setDescription('La session de roulette a été arrêtée. Tous les paris en attente ont été remboursés.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [stopEmbed], components: [] });
+    }
+}
+
+async function handleLiveRouletteCategorySelection(interaction) {
+    const selectedCategory = interaction.values[0];
+    const rouletteModule = require('./commands/roulette.js');
+    
+    // Create and show modal for the selected category
+    const modal = rouletteModule.createBetModal(selectedCategory);
+    await interaction.showModal(modal);
+}
+
+async function handleLiveRouletteModalSubmission(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const rouletteModule = require('./commands/roulette.js');
+        const userProfiles = require('./utils/userProfiles.js');
+        const { liveRouletteSessions } = rouletteModule;
+        
+        const betType = interaction.customId.split('_').pop();
+        const choice = interaction.fields.getTextInputValue('bet_choice').trim().toLowerCase();
+        const amountStr = interaction.fields.getTextInputValue('bet_amount').trim();
+        const amount = parseFloat(amountStr);
+        const userId = interaction.user.id;
+        const channelId = interaction.channel.id;
+        
+        // Validate amount
+        if (isNaN(amount) || amount <= 0) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Montant Invalide')
+                .setDescription('Veuillez entrer un montant valide en LTC.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check session
+        const session = liveRouletteSessions.get(channelId);
+        if (!session || !session.isActive) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Session Expirée')
+                .setDescription('La session de roulette a expiré.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check user balance
+        const profile = userProfiles.getUserProfile(userId);
+        if (profile.balance < amount) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Solde Insuffisant')
+                .setDescription(`Vous avez besoin de ${amount.toFixed(8)} LTC mais vous n'avez que ${profile.balance.toFixed(8)} LTC.`)
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Validate and parse choice based on bet type
+        let parsedDetails;
+        
+        if (betType === 'number') {
+            const numbers = choice.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n >= 0 && n <= 36);
+            if (numbers.length === 0) {
+                throw new Error('Numéros invalides. Utilisez des nombres entre 0 et 36 séparés par des virgules.');
+            }
+            parsedDetails = numbers;
+        } else if (betType === 'color') {
+            if (!['red', 'black'].includes(choice)) {
+                throw new Error('Couleur invalide. Utilisez "red" ou "black".');
+            }
+            parsedDetails = choice;
+        } else if (betType === 'dozen') {
+            if (!['1st12', '2nd12', '3rd12'].includes(choice)) {
+                throw new Error('Douzaine invalide. Utilisez "1st12", "2nd12" ou "3rd12".');
+            }
+            parsedDetails = choice;
+        } else if (betType === 'column') {
+            if (!['1st column', '2nd column', '3rd column'].includes(choice)) {
+                throw new Error('Colonne invalide. Utilisez "1st column", "2nd column" ou "3rd column".');
+            }
+            parsedDetails = choice;
+        } else if (betType === 'evenodd') {
+            if (!['even', 'odd'].includes(choice)) {
+                throw new Error('Pari invalide. Utilisez "even" ou "odd".');
+            }
+            parsedDetails = choice;
+        } else if (betType === 'range') {
+            if (!['1-18', '19-36'].includes(choice)) {
+                throw new Error('Range invalide. Utilisez "1-18" ou "19-36".');
+            }
+            parsedDetails = choice;
+        }
+        
+        // Create bet object
+        const bet = {
+            type: betType,
+            details: parsedDetails,
+            amount: amount
+        };
+        
+        // Add bet to session
+        if (!session.pendingBets.has(userId)) {
+            session.pendingBets.set(userId, []);
+        }
+        session.pendingBets.get(userId).push(bet);
+        
+        // Success message
+        const successEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('✅ Pari Ajouté')
+            .setDescription(`Votre pari a été ajouté avec succès !\\n\\n**Type**: ${betType}\\n**Détails**: ${Array.isArray(parsedDetails) ? parsedDetails.join(', ') : parsedDetails}\\n**Montant**: ${amount.toFixed(8)} LTC`)
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [successEmbed] });
+        
+        console.log(`💰 ${interaction.user.username} added bet: ${betType} - ${parsedDetails} - ${amount} LTC`);
+        
+    } catch (error) {
+        console.error('Live roulette modal error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Erreur de Pari')
+            .setDescription(error.message || 'Une erreur est survenue lors de l\'ajout de votre pari.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
 // Coinflip progression button handlers
 async function handleCoinflipDouble(interaction) {
     await interaction.deferReply({ ephemeral: false });
@@ -1577,6 +1816,656 @@ async function handleCoinflipCashout(interaction) {
             .setColor('#ff0000')
             .setTitle('❌ Erreur')
             .setDescription('Une erreur est survenue lors de l\'encaissement.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+// Live Roulette Handlers
+async function handleLiveRouletteBet(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const betType = interaction.customId.replace('live_roulette_', '');
+        const userId = interaction.user.id;
+        const channelId = interaction.channel.id;
+        
+        // Check if live roulette is active in this channel
+        if (!liveRoulette.isRunning || liveRoulette.liveChannelId !== channelId) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active live roulette session in this channel.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check if betting is open
+        if (!liveRoulette.bettingPhase) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Betting Closed')
+                .setDescription('Betting is closed for this round. Wait for the next round!')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Show modal for bet amount
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+        
+        const modal = new ModalBuilder()
+            .setCustomId(`live_roulette_modal_${betType}`)
+            .setTitle(`Bet on ${betType.charAt(0).toUpperCase() + betType.slice(1)}`);
+        
+        const amountInput = new TextInputBuilder()
+            .setCustomId('bet_amount')
+            .setLabel('Bet Amount (LTC)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('0.001')
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(10);
+        
+        const amountRow = new ActionRowBuilder().addComponents(amountInput);
+        modal.addComponents(amountRow);
+        
+        await interaction.showModal(modal);
+        
+    } catch (error) {
+        console.error('❌ Live roulette bet error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while processing your bet.')
+            .setTimestamp();
+        
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+        } else {
+            await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
+    }
+}
+
+async function handleLiveRouletteCategorySelection(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const selectedCategory = interaction.values[0];
+        
+        // Show modal based on category selection
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+        
+        const modal = new ModalBuilder()
+            .setCustomId(`live_roulette_modal_${selectedCategory}`)
+            .setTitle(`Place ${selectedCategory} Bet`);
+        
+        let choiceInput, amountInput;
+        
+        if (selectedCategory === 'number') {
+            choiceInput = new TextInputBuilder()
+                .setCustomId('bet_choice')
+                .setLabel('Number (0-36)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('7')
+                .setRequired(true)
+                .setMinLength(1)
+                .setMaxLength(2);
+        } else if (selectedCategory === 'color') {
+            choiceInput = new TextInputBuilder()
+                .setCustomId('bet_choice')
+                .setLabel('Color (red/black)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('red')
+                .setRequired(true);
+        }
+        
+        amountInput = new TextInputBuilder()
+            .setCustomId('bet_amount')
+            .setLabel('Bet Amount (LTC)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('0.001')
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(10);
+        
+        if (choiceInput) {
+            const choiceRow = new ActionRowBuilder().addComponents(choiceInput);
+            modal.addComponents(choiceRow);
+        }
+        
+        const amountRow = new ActionRowBuilder().addComponents(amountInput);
+        modal.addComponents(amountRow);
+        
+        await interaction.showModal(modal);
+        
+    } catch (error) {
+        console.error('❌ Live roulette category selection error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while processing your selection.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleLiveRouletteModalSubmission(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const betType = interaction.customId.replace('live_roulette_modal_', '');
+        const userId = interaction.user.id;
+        const channelId = interaction.channel.id;
+        
+        // Get bet details from modal
+        const betAmount = parseFloat(interaction.fields.getTextInputValue('bet_amount'));
+        let betChoice = null;
+        
+        try {
+            betChoice = interaction.fields.getTextInputValue('bet_choice');
+        } catch (error) {
+            // bet_choice is optional for some bet types
+        }
+        
+        // Validate bet amount
+        if (isNaN(betAmount) || betAmount <= 0) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Invalid Bet Amount')
+                .setDescription('Please enter a valid bet amount greater than 0.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        if (betAmount < 0.001) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Minimum Bet')
+                .setDescription('Minimum bet is 0.001 LTC.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check user balance
+        const userProfiles = require('./utils/userProfiles.js');
+        const profile = userProfiles.getUserProfile(userId);
+        
+        if (profile.balance < betAmount) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Insufficient Balance')
+                .setDescription(`You need ${betAmount.toFixed(8)} LTC to place this bet.\nYour current balance: ${profile.balance.toFixed(8)} LTC`)
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Check if live roulette is active and betting is open
+        if (!liveRoulette.isRunning || liveRoulette.liveChannelId !== channelId) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active live roulette session in this channel.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        if (!liveRoulette.bettingPhase) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Betting Closed')
+                .setDescription('Betting is closed for this round. Your bet was not placed.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Process specific bet types
+        let finalBetType = betType;
+        
+        if (betType === 'number' && betChoice !== null) {
+            const number = parseInt(betChoice);
+            if (isNaN(number) || number < 0 || number > 36) {
+                const errorEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Invalid Number')
+                    .setDescription('Please enter a number between 0 and 36.')
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [errorEmbed] });
+                return;
+            }
+            finalBetType = `number_${number}`;
+        } else if (betType === 'color' && betChoice !== null) {
+            if (!['red', 'black'].includes(betChoice.toLowerCase())) {
+                const errorEmbed = new EmbedBuilder()
+                    .setColor('#ff0000')
+                    .setTitle('❌ Invalid Color')
+                    .setDescription('Please enter "red" or "black".')
+                    .setTimestamp();
+                
+                await interaction.editReply({ embeds: [errorEmbed] });
+                return;
+            }
+            finalBetType = betChoice.toLowerCase();
+        }
+        
+        // Deduct bet amount from user balance
+        profile.balance -= betAmount;
+        userProfiles.saveProfile(userId, profile);
+        
+        // Place the bet
+        const result = liveRoulette.placeBet(userId, finalBetType, betAmount);
+        
+        if (result.success) {
+            const successEmbed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('✅ Bet Placed!')
+                .setDescription(`Your bet has been placed successfully!`)
+                .addFields(
+                    { name: '🎯 Bet Type', value: finalBetType.replace('_', ' '), inline: true },
+                    { name: '💰 Amount', value: `${betAmount.toFixed(8)} LTC`, inline: true },
+                    { name: '💳 New Balance', value: `${profile.balance.toFixed(8)} LTC`, inline: true }
+                )
+                .setFooter({ text: `Time left to bet: ${liveRoulette.timeLeft} seconds` })
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [successEmbed] });
+            
+            // Log the bet
+            const logManager = require('./utils/logManager.js');
+            await logManager.sendGamblingLog(client, interaction.guild.id, {
+                type: 'bet_placed',
+                user: interaction.user,
+                game: 'Live Roulette',
+                amount: betAmount,
+                betType: finalBetType
+            });
+            
+        } else {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Bet Failed')
+                .setDescription(result.message || 'Failed to place bet.')
+                .setTimestamp();
+            
+            // Refund the bet amount
+            profile.balance += betAmount;
+            userProfiles.saveProfile(userId, profile);
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+        }
+        
+    } catch (error) {
+        console.error('❌ Live roulette modal submission error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while processing your bet.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+// Additional Live Roulette Handler Functions
+async function handleLiveRouletteAddBet(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const channelId = interaction.channel.id;
+        const userId = interaction.user.id;
+        
+        // Check if there's an active session
+        const rouletteCommand = require('./commands/roulette.js');
+        const liveRouletteSessions = rouletteCommand.liveRouletteSessions;
+        
+        if (!liveRouletteSessions.has(channelId)) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active roulette session in this channel.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const session = liveRouletteSessions.get(channelId);
+        
+        if (!session.bettingOpen) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Betting Closed')
+                .setDescription('Betting is currently closed for this round.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Show instruction to use dropdown first
+        const instructionEmbed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('📋 How to Place a Bet')
+            .setDescription('To place a bet, please follow these steps:')
+            .addFields(
+                {
+                    name: '1️⃣ Select Category',
+                    value: 'Use the dropdown menu above to select your betting category (Numbers, Colors, Even/Odd, etc.)',
+                    inline: false
+                },
+                {
+                    name: '2️⃣ Modal Opens',
+                    value: 'A modal will open where you can enter your specific bet details and amount',
+                    inline: false
+                },
+                {
+                    name: '3️⃣ Confirm Bet',
+                    value: 'Submit the modal to place your bet - your balance will be deducted immediately',
+                    inline: false
+                }
+            )
+            .setFooter({ text: 'Select a category from the dropdown menu above to get started!' })
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [instructionEmbed] });
+        
+    } catch (error) {
+        console.error('❌ Add bet handler error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while processing your request.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleLiveRouletteViewBets(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+        const channelId = interaction.channel.id;
+        const userId = interaction.user.id;
+        
+        // Get user's current bets from LiveRoulette instance
+        const liveRouletteInstance = interaction.client.liveRoulette;
+        
+        if (!liveRouletteInstance || !liveRouletteInstance.isRunning) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active live roulette session.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const userBets = liveRouletteInstance.getUserBets(userId);
+        
+        if (userBets.bets.size === 0) {
+            const noBetsEmbed = new EmbedBuilder()
+                .setColor('#ffaa00')
+                .setTitle('📋 Your Bets')
+                .setDescription('You haven\'t placed any bets yet this round.')
+                .addFields({
+                    name: '💡 How to Bet',
+                    value: 'Use the dropdown menu to select a betting category, then fill in the modal to place your bet.',
+                    inline: false
+                })
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [noBetsEmbed] });
+            return;
+        }
+        
+        // Format user bets
+        let betsText = '';
+        let totalBet = 0;
+        
+        for (const [betType, amount] of userBets.bets) {
+            const formattedBetType = betType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            betsText += `• **${formattedBetType}**: ${amount.toFixed(8)} LTC\n`;
+            totalBet += amount;
+        }
+        
+        const betsEmbed = new EmbedBuilder()
+            .setColor('#00ff00')
+            .setTitle('📋 Your Current Bets')
+            .setDescription('Here are your bets for this round:')
+            .addFields(
+                {
+                    name: '🎯 Your Bets',
+                    value: betsText,
+                    inline: false
+                },
+                {
+                    name: '💰 Total Bet Amount',
+                    value: `${totalBet.toFixed(8)} LTC`,
+                    inline: true
+                },
+                {
+                    name: '⏰ Time Left',
+                    value: `${liveRouletteInstance.timeLeft} seconds`,
+                    inline: true
+                }
+            )
+            .setFooter({ text: 'Good luck! 🍀' })
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [betsEmbed] });
+        
+    } catch (error) {
+        console.error('❌ View bets handler error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while retrieving your bets.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleLiveRouletteStartTimer(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const channelId = interaction.channel.id;
+        const userId = interaction.user.id;
+        
+        // Check permissions (only session host can start timer)
+        const rouletteCommand = require('./commands/roulette.js');
+        const liveRouletteSessions = rouletteCommand.liveRouletteSessions;
+        
+        if (!liveRouletteSessions.has(channelId)) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active roulette session in this channel.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const session = liveRouletteSessions.get(channelId);
+        
+        if (session.host !== userId) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Permission Denied')
+                .setDescription('Only the session host can start the timer.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Start the 60-second countdown using LiveRoulette class
+        const liveRouletteInstance = interaction.client.liveRoulette;
+        
+        if (!liveRouletteInstance) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ System Error')
+                .setDescription('Live roulette system not initialized.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Start the live roulette session
+        liveRouletteInstance.start(channelId);
+        
+        const timerEmbed = new EmbedBuilder()
+            .setColor('#ff6b00')
+            .setTitle('⏰ 60-Second Timer Started!')
+            .setDescription('The betting timer has started! You have **60 seconds** to place your bets.')
+            .addFields(
+                {
+                    name: '📋 Instructions',
+                    value: '• Use the dropdown above to select betting categories\n• Place your bets using the modals\n• Betting will close automatically when timer expires',
+                    inline: false
+                },
+                {
+                    name: '⏰ Time Remaining',
+                    value: '60 seconds',
+                    inline: true
+                },
+                {
+                    name: '🎰 What Happens Next',
+                    value: 'Wheel will spin automatically when time expires',
+                    inline: true
+                }
+            )
+            .setFooter({ text: 'Good luck to all players! 🍀' })
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [timerEmbed] });
+        
+        console.log(`⏰ Live roulette 60s timer started in channel ${channelId} by ${interaction.user.username}`);
+        
+    } catch (error) {
+        console.error('❌ Start timer handler error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while starting the timer.')
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [errorEmbed] });
+    }
+}
+
+async function handleLiveRouletteEndSession(interaction) {
+    await interaction.deferReply({ ephemeral: false });
+    
+    try {
+        const channelId = interaction.channel.id;
+        const userId = interaction.user.id;
+        
+        // Check permissions (only session host can end session)
+        const rouletteCommand = require('./commands/roulette.js');
+        const liveRouletteSessions = rouletteCommand.liveRouletteSessions;
+        
+        if (!liveRouletteSessions.has(channelId)) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ No Active Session')
+                .setDescription('There is no active roulette session in this channel.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        const session = liveRouletteSessions.get(channelId);
+        
+        if (session.host !== userId) {
+            const errorEmbed = new EmbedBuilder()
+                .setColor('#ff0000')
+                .setTitle('❌ Permission Denied')
+                .setDescription('Only the session host can end the session.')
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+        
+        // Stop the live roulette instance
+        const liveRouletteInstance = interaction.client.liveRoulette;
+        if (liveRouletteInstance) {
+            liveRouletteInstance.stop();
+        }
+        
+        // End the session using the existing function
+        await rouletteCommand.endLiveRouletteSession(channelId, interaction.client);
+        
+        const endEmbed = new EmbedBuilder()
+            .setColor('#e74c3c')
+            .setTitle('🛑 Live Roulette Session Ended')
+            .setDescription('The live roulette session has been ended by the host.')
+            .addFields(
+                {
+                    name: '💰 Refunds',
+                    value: 'All pending bets have been refunded to players\' balances.',
+                    inline: false
+                },
+                {
+                    name: '🎮 New Session',
+                    value: 'Use `/roulette` to start a new live roulette session.',
+                    inline: false
+                }
+            )
+            .setFooter({ text: 'Thank you for playing!' })
+            .setTimestamp();
+        
+        await interaction.editReply({ embeds: [endEmbed] });
+        
+        console.log(`🛑 Live roulette session ended in channel ${channelId} by ${interaction.user.username}`);
+        
+        // Log session end
+        const logManager = require('./utils/logManager.js');
+        await logManager.sendGamblingLog(interaction.client, interaction.guild.id, {
+            type: 'session_ended',
+            user: interaction.user,
+            game: 'Live Roulette',
+            channel: interaction.channel.name
+        });
+        
+    } catch (error) {
+        console.error('❌ End session handler error:', error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ Error')
+            .setDescription('An error occurred while ending the session.')
             .setTimestamp();
         
         await interaction.editReply({ embeds: [errorEmbed] });

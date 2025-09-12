@@ -7,7 +7,7 @@ class LiveRoulette {
         this.currentBets = new Map(); // userId -> { bets: Map, totalBet: number }
         this.spinInterval = null;
         this.bettingPhase = true;
-        this.timeLeft = 30;
+        this.timeLeft = 60;
         this.liveChannelId = null;
         this.currentMessage = null;
         
@@ -27,7 +27,7 @@ class LiveRoulette {
         this.liveChannelId = channelId;
         this.isRunning = true;
         this.bettingPhase = true;
-        this.timeLeft = 30;
+        this.timeLeft = 60;
         
         console.log('🎰 Starting live roulette in channel:', channelId);
         this.runCycle();
@@ -51,7 +51,7 @@ class LiveRoulette {
         try {
             // Betting phase (30 seconds)
             this.bettingPhase = true;
-            this.timeLeft = 30;
+            this.timeLeft = 60;
             await this.updateDisplay();
             
             // Countdown
