@@ -39,3 +39,7 @@ args = "node discord-bot.js"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[ports]]
+localPort = 46063
+externalPort = 80

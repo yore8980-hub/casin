@@ -21,7 +21,10 @@ const SPINNING_GIF = 'https://images-ext-1.discordapp.net/external/u8-37Lffp-3TZ
 const RESULT_IMAGES = {
     0: 'attached_assets/generated_images/Roulette_result_number_0_4d73fe42.png',
     7: 'attached_assets/generated_images/Roulette_result_number_7_e4d0dd16.png',
-    17: 'attached_assets/generated_images/Roulette_result_number_17_4b9041d3.png'
+    10: 'attached_assets/generated_images/Roulette_result_number_10_9f0cab69.png',
+    17: 'attached_assets/generated_images/Roulette_result_number_17_4b9041d3.png',
+    23: 'attached_assets/generated_images/Roulette_result_number_23_18993432.png',
+    36: 'attached_assets/generated_images/Roulette_result_number_36_0d76f74c.png'
 };
 
 function formatLTC(amount) {

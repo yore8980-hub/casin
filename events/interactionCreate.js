@@ -3,37 +3,9 @@ const { Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = r
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
-        // Handle slash commands
+        // Slash commands are handled in discord-bot.js to avoid duplicate execution
         if (interaction.isChatInputCommand()) {
-            const command = interaction.client.commands.get(interaction.commandName);
-
-            if (!command) {
-                console.error(`❌ No command matching ${interaction.commandName} was found.`);
-                return;
-            }
-
-            try {
-                await command.execute(interaction);
-                console.log(`✅ ${interaction.user.username} a utilisé /${interaction.commandName}`);
-            } catch (error) {
-                console.error(`❌ Erreur lors de l'exécution de ${interaction.commandName}:`, error);
-
-                try {
-                    const errorEmbed = new EmbedBuilder()
-                        .setColor('#ff0000')
-                        .setTitle('❌ Command Error')
-                        .setDescription('There was an error while executing this command!')
-                        .setTimestamp();
-
-                    if (interaction.replied || interaction.deferred) {
-                        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
-                    } else {
-                        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-                    }
-                } catch (replyError) {
-                    console.error('⚠️ Impossible de répondre à l\'interaction:', replyError.message);
-                }
-            }
+            return; // Skip to prevent double handling
         }
 
         // Handle button interactions
